@@ -23,13 +23,15 @@
 
 *Last rewritten 2083-05-26 (C-014); production figures re-read 2083-06-06 (C-016). Everything below is verified against production, not remembered.*
 
-> **Production has run 0021** (read-only check 2083-06-08: `_migrations` ends at `0021_purchase_bill_discount.sql`, 21 applied), after the owner's commit `a18215b purchase entry with bill photos`. Previously: **production ran 0019 and 0020** (read-only check 2083-06-06, C-017: `_migrations` ends at `0020_date_calendar.sql`), after the owner's commits `700f797 migration` and `869869f migration and auto backup changes`. **One thing is still the owner's: connect a private Blob store** (Deploy.md, "The storage has to be a private store"). On the same check `backups` had 16 rows and **no kept copy**, so either the store is not connected yet or no nightly run has happened since — until a *Nightly* row with *Download* appears, nothing is backed up on its own.
+> **This install's database is new and empty.** Read-only check 2083-06-09: `clinicnpforchp-clinicnpforchp.aws-ap-south-1.turso.io` has **0 tables** — no `_migrations`, no `company`, no users. `db/migrations` holds 21 files ending at `0021_purchase_bill_discount.sql`, so the first `pnpm db:migrate` takes this database straight to 0021. **Still the owner's:** run `pnpm db:bootstrap` (company row, fiscal year, Admin user) and connect a private Blob store (Deploy.md, "The storage has to be a private store") — until a *Nightly* row with *Download* appears, nothing is backed up on its own.
+>
+> The figures in the paragraph above replaced the previous install's, which had run 0021 with 16 `backups` rows. **The code is unchanged and still at the same maturity**; what reset is the data.
 
-**Product:** **ClinicNP** — clinic + pharmacy, two toggleable modules. First install: **Himal Health Clinic & Pharmacy**, Sallaghari, Bhaktapur (both modules on).
+**Product:** **ClinicNP** — clinic + pharmacy, two toggleable modules. Current install: **Chunidevi Health Polyclinic Pvt. Ltd.** — clinic + pharmacy, both modules on. *Address, PAN and phone not yet supplied; they are entered by the clinic at `db:bootstrap`, never hard-coded (Rules §1.4).*
 **Predecessor:** Faarma v1 (pharmacy only), itself formerly AushadhiPOS. AushadhiPOS is fully retired as a name. Faarma survives only as the derived `appName` when the Clinic module is off.
 **Phase:** all five phases complete and deployed. The work since has been what a real shop asks for once it starts using the thing. **The software is ready to trade.** What is left is the clinic's own data entry, plus one blocking security item (below).
-**Repo:** `D:\IBN\Installations\clinicnp-himalhealthclinic`, branch `main`, pushed to `github.com/ShiwamPaudel/clinicnp-himalhealthclinic`.
-**Deployed:** Vercel, against hosted Turso `healthclinic-himalhealthclinic.aws-ap-south-1.turso.io`. **This is live production with real settings in it — never point a test script at it without backing up first.**
+**Repo:** `D:\IBN\Installations\clinicnp-chp`, branch `main`, pushed to `github.com/ShiwamPaudel/ClinicNP-CHP`.
+**Deployed:** Vercel, against hosted Turso `clinicnpforchp-clinicnpforchp.aws-ap-south-1.turso.io`. **This is the production database for this install** — empty as of 2083-06-09, but treat it as live from the moment `db:bootstrap` runs, and never point a test script at it without backing up first.
 
 ### 🔴 The one blocking item
 
@@ -156,7 +158,7 @@
 | D-033 | **Patient files: server-mediated upload and serve only**, private blobs, soft delete with a 30-day GC | A file URL that works logged-out would be a serious breach |
 | D-034 | **Offline patient registration** reuses the bill outbox pattern (client ULID → provisional number → server-assigned number on sync); duplicates are flagged for a human, never auto-merged | A clinic in a power cut still has to register the person in front of them |
 | D-035 | Stock-out reasons are a **fixed list**, not user-configurable codes | Reports depend on stable reason semantics; free-form codes make them meaningless |
-| D-036 | ClinicNP lives in a **new git repo** at `Installations/clinicnp-himalhealthclinic`, seeded from the v1 tree; the v1 tree is left untouched | v1 had no git at all, so there was no rollback net. Confirms D-023 (continuation) while giving Phase 1 a safe baseline commit |
+| D-036 | ClinicNP lives in a **new git repo** at `Installations/clinicnp-chp`, seeded from the v1 tree; the v1 tree is left untouched | v1 had no git at all, so there was no rollback net. Confirms D-023 (continuation) while giving Phase 1 a safe baseline commit |
 | D-037 | The wordmark is **typographic, not raster** (`components/ui/wordmark.tsx`) — sage with the "NP" in navy; Faarma renders in sage alone | A derived name (D-025) cannot be a fixed image. Also removed `next/image` from the counter, taking `/billing` from 140 kB → 135 kB. The old Faarma brand PNGs are deleted |
 | D-038 | The counter's IndexedDB is renamed `faarma` → `clinicnp` with a **verified carry-over**: copy `outbox` + `held`, confirm the counts, and only then delete the old database | A queued bill is never destroyed to tidy a name. Risk is near-zero anyway (v1 never deployed), but the guard is cheap |
 | D-039 | The hosted Turso is **never** the dev target. `.env.local` in this repo points at a local file DB and carries **no** Turso credentials | Memory's standing rule: never test or capture against the clinic's data |
@@ -196,7 +198,7 @@
 | D-073 | The **INSERT arity check** lives in `scripts/audit.mjs`, not in a code review | `saveCompany` shipped with fourteen columns against fifteen values and threw on every single call. Counting placeholders is something a person does badly and a machine does perfectly |
 | D-074 | Every repo function a screen calls gets **at least one test that calls it** | The company profile was the one write path no test touched, and it was the one that was broken. Green tests measured what was covered, not what worked |
 | D-075 | **Service groups are the department list.** There will not be a second list of departments | Groups already carry the services, their rates and their reports. A parallel department table would drift from them within a month, and then two screens would disagree about which department a test belongs to |
-| D-076 | The outside-lab workflow stops at **Report received**. ClinicNP records that a report came back; it never records what the report says | Himal sends samples out and the partner laboratory issues the result. Storing values would make ClinicNP look like the authority on a number it did not measure. This is the same line Rules §2.2 draws around lab results, and it holds |
+| D-076 | The outside-lab workflow stops at **Report received**. ClinicNP records that a report came back; it never records what the report says | Chunidevi sends samples out and the partner laboratory issues the result. Storing values would make ClinicNP look like the authority on a number it did not measure. This is the same line Rules §2.2 draws around lab results, and it holds |
 | D-077 | **Opening stock is not a purchase**, and will not be recorded as one | Entering the shelf as a fake purchase invents a supplier, an invoice number and a payable that nobody owes. `createBatchWithStock` already takes a null `purchaseId`; the gap is a screen, not a schema |
 | D-078 | **The rack map and the free-text shelf note both stay**, and the item form shows whichever fits: the picker when racks are drawn, the note when they are not | Deleting the note would throw away what shops typed for years; showing both at once would give one question two answers. The note also remains the counter's fallback, so a shop that never draws a rack loses nothing |
 | D-079 | **An item's shelf is saved by the item form**, not by a separate action, and validated by one shared `assertCellFits` | A second save button for a field on the same screen is a second thing to forget. Both writers — the form and the shelf inspector — go through the same check, so a rule added once holds everywhere |
@@ -237,7 +239,7 @@
 | D-113 | **Help text says what to do, never why the screen was built that way** | Rules §1b, and the reason it exists: the owner read "There is one bill format — the header image is the only thing that changes how it looks" on their settings screen and asked what it was doing there. It is a note to another programmer wearing a user's clothes. If a sentence would only make sense to somebody who had considered the alternative, it belongs in a code comment. This cannot be grepped for; it is review's job, and the whole product was read through once in C-013 looking for it |
 | D-114 | **The sign-in form comes first on a phone, above the brand panel** (`order-1 lg:order-2`) | Somebody opening this on the shop's tablet wants the password box, not the sales pitch. The first version stacked the panel on top and put five features and a support block between the top of the page and the username field. The pitch is still there, underneath, where somebody idly waiting will find it |
 
-| D-115 | **Booked consultations are built, overturning Rules §2.4's "no appointments, no scheduling"** | The rule was written to stop the product drifting into a hospital information system. The owner asked for this one directly and specifically: a doctor's name, a patient, a date and a time, and the doctor told. That is a diary, not a scheduling engine, and Himal was keeping it on paper on one desk. The rest of §2.4 is untouched and now says so explicitly — no SMS, no patient portal, no patient-facing booking, no recurring bookings, no queue numbers, no calendar sync |
+| D-115 | **Booked consultations are built, overturning Rules §2.4's "no appointments, no scheduling"** | The rule was written to stop the product drifting into a hospital information system. The owner asked for this one directly and specifically: a doctor's name, a patient, a date and a time, and the doctor told. That is a diary, not a scheduling engine, and Chunidevi was keeping it on paper on one desk. The rest of §2.4 is untouched and now says so explicitly — no SMS, no patient portal, no patient-facing booking, no recurring bookings, no queue numbers, no calendar sync |
 | D-116 | **A booking is a separate row from a visit, and never becomes one automatically** | A visit is the record of an encounter that happened; a booking is an arrangement that may be cancelled, missed, or never turned up for. Writing a visit at booking time would put people who never came into the day's counts, the doctor's share and every clinic report. `appointments.visit_id` is set only when somebody actually walks in |
 | D-117 | **Time of day is stored as `HH:MM` text beside the date, not as one combined moment** | A clinic books "Thursday at 2" in local time and always will. A combined moment forces a zone on a fact that has none, and the pair sorts correctly as text, which is all these lists ever ask of it. Both dates are kept as usual: `date_ad` for arithmetic and range reads, `date_bs` for what is shown (Rules §1.5) |
 | D-118 | **Back to back is not a clash** | The overlap test is strictly `aStart < bEnd && bStart < aEnd`, so a 2:00 that runs fifteen minutes and a 2:15 are two consecutive patients, not a double booking. Getting this wrong in the other direction would have the software refuse the way every clinic in the country actually runs its afternoon. Pinned by `tests/appointment-types.test.ts` |
@@ -367,7 +369,7 @@ Also corrected: `Deploy.md` told the next person to run `pnpm audit`, which pnpm
 
 Verified: **250 tests green**, typecheck clean, sweep clean, audit clean, counter bundle 146 kB → **143 kB** on the newer shared chunks. Middleware bypass CVE-2025-29927 confirmed never exploitable here — every page sits under a layout calling `requireUser()` and all 14 API routes guard themselves — checked by sending the bypass header and getting the same redirect to /login as an anonymous request.
 
-### Requested at Himal, not yet built  ·  2083-05-22
+### Requested at Chunidevi, not yet built  ·  2083-05-22
 The owner walked through how the clinic actually runs. What was asked for, and what is already there:
 
 **Already built, no work needed.** Tests and their rates go in **Settings → Services**, each one carrying its group, rate, whether it is sent to an outside lab (with the partner and what they charge), whether a report is expected back, and whether a doctor is required. **Service groups are fully editable** — create, rename, delete — through `settings/catalog-actions.ts`. Ten are seeded.
@@ -385,7 +387,7 @@ Still out of scope and not drifted into: lab **results**, reference ranges, EMR,
 ### C-008  ·  2083-05-23  ·  Racks made real: the map now points at something
 The rack map shipped in C-007 could be drawn and could store nothing. There was no way to put a medicine on a shelf, the counter never read `company.rack_display`, and `setItemCellAction` had no callers — a floor plan with an empty floor. The owner asked the right question: what is the use of racks at billing, and how are they linked to the medicines? They were not linked at all.
 
-Researched how other systems do it before building. Marg ERP and Gofrugal both keep stock rack-wise for exactly this purpose — "identify which item is kept in which rack **at the time of billing**" — and both also offer rack-wise stock and expiry reports, which turned out to be the more durable use. Western retail (Lightspeed) stores Aisle/Bay/Shelf/Bin as a text code. **Nobody draws a picture**, because their users are trained staff for whom `A-3-2` is faster to read than a map. Himal's counter staff are not, which is why the picture stays — but the text form had to work too, and now does.
+Researched how other systems do it before building. Marg ERP and Gofrugal both keep stock rack-wise for exactly this purpose — "identify which item is kept in which rack **at the time of billing**" — and both also offer rack-wise stock and expiry reports, which turned out to be the more durable use. Western retail (Lightspeed) stores Aisle/Bay/Shelf/Bin as a text code. **Nobody draws a picture**, because their users are trained staff for whom `A-3-2` is faster to read than a map. Chunidevi's counter staff are not, which is why the picture stays — but the text form had to work too, and now does.
 
 Built: **`cell-picker.tsx`**, the one "where is it kept" control, adapting to whether racks exist (D-078). **`shelf-inspector.tsx`** on Settings → Racks — click a shelf, see what is on it, put things on it, take them off; this is the bulk path, because a shop opening with two hundred items will not visit two hundred edit screens. **The counter** now honours all three `rack_display` modes: off, the shelf written out beside every result, or the map with the cell lit beside the results list. **`/reports/shelf`** — the shop in the order you walk it, with the unshelved last where they read as work remaining, plus an .xlsx export that doubles as a stock-take sheet. **The expiry report** gained a Shelf column and a "Shelf by shelf" ordering, so clearing near-expiry stock is one walk instead of six. `db:seed` now draws two sample racks with the demo medicines on them, because a training database that shows an empty floor plan teaches that the feature does not work.
 
@@ -393,7 +395,7 @@ Decisions/assumptions: D-078 … D-082.
 Schema changes: **none.** `0011` and `0012` already created `racks` and the three `items` columns; this session filled them in. **Production needs a deploy, not a migration.**
 Broke/fixed: two accessibility defects on the rack page, both from C-007 and both invisible until `scripts/a11y.mjs` was pointed at that screen — the edit and remove buttons were icon-only and announced as "button", and the rack map used 10px and 9px type. The a11y script now covers `/settings/racks` and `/reports/shelf` permanently. Also learned the hard way that `items.rack_id` carries a real enforced foreign key: racks cannot be deleted until the items on them let go, which is why `deleteRack` nulls the cells inside its batch and why `db/reset.ts` lists `items` before `racks`.
 Verified: **263 tests green** (13 new in `tests/racks.integration.test.ts`), typecheck clean, sweep clean, audit clean at 76 routes and 69 INSERTs, accessibility clean across 9 screens. The catalog-version tests were mutation-checked — reverting racks out of the version string fails exactly those two and nothing else. Browser-verified against a throwaway seeded file database, 35 checks: the inspector opening on a clicked shelf, an item moved between shelves and the move read back out of the database, all three display modes at the counter (map lit, text only, silent), both reports, the .xlsx download, and — with every rack deleted — the free-text note taking over on both the item form and the counter, with the shelf list saying so instead of drawing an empty table.
-Not built (requested, out of scope): the put-away direction (a delivery arriving and the software saying where each item goes) was identified in the research as a real third use and deliberately left out — Himal has not asked for it.
+Not built (requested, out of scope): the put-away direction (a delivery arriving and the software saying where each item goes) was identified in the research as a real third use and deliberately left out — Chunidevi has not asked for it.
 Still open from C-007: department as a pick-list (D-075), sample-collected / report-received (D-076), the opening-stock screen (D-077), A4 top-half printing, reports out of the pharmacy module, and the item-master import. **`print_format = 'a4_half'` is still selectable in Settings and still prints thermal** — the setting landed in C-007 and the template did not.
 Next: the owner's call. The A4 template is the smallest real gap; the item import is the largest win before go-live.
 
@@ -411,7 +413,7 @@ Verified: **271 tests green** (21 in the rack suite, rewritten around the new mo
 Not built: the two questions the owner asked — see below. Nothing was half-built toward either.
 Next: the item-master import, which this migration was the precondition for.
 
-### Answered at Himal, 2083-05-23 — and still true
+### Answered at Chunidevi, 2083-05-23 — and still true
 **"Can I update stock other than by a purchase?" — No.** `createBatchWithStock` in `batches.ts` takes exactly the right shape, including a nullable `purchaseId`, and has **no callers outside tests** — correcting an earlier note in C-007 that said no callers at all. It also hardcodes `reason = 'purchase'`, so an opening-stock screen needs either a new `'opening'` reason (stock_moves.reason carries a CHECK, so that means a table rebuild) or an accepted lie in the ledger. Recommend the rebuild: opening stock and a purchase are different facts and the day-book should not claim otherwise. Until then the shelf can only be entered as a fake purchase, which invents a supplier and a payable (D-077).
 
 **"Any Excel file at installation, or do we create items one by one?" — One by one, today.** There is **no import path anywhere in the codebase**: `exceljs` appears in exactly one file, `api/export/[report]/route.ts`, and only to write. Items, suppliers and purchases are all hand-entered. For an install with a few hundred medicines that is not acceptable, and it is the largest remaining win before go-live. 0013 was the precondition — an importer can now create missing items and touch neither location, rate nor stock.
@@ -495,7 +497,7 @@ Decisions/assumptions: D-106 to D-114.
 Schema changes: none. Production untouched all session — read once to confirm the company row, never written.
 Broke/fixed: `tests/first-price.integration.test.ts` did not typecheck (a libSQL `execute({ sql })` with no `args`) — it was committed that way last session and my "typecheck clean" claim for C-012 was wrong. The new login test caught a real defect before anyone saw it: at five features the both-modules install silently dropped "Keeps working offline", the most distinctive claim on the screen (D-110). A `pnpm build` run while `pnpm dev` was live failed mid-prerender on `/stock/opening` with a webpack-runtime error naming an innocent page — they share `.next`; now written into Deploy.md.
 Verified: 343 tests across 30 files, typecheck, `run audit`, sweep, and a clean `pnpm build` (`/billing` 145 kB, `/login` 128 kB) with no dev server running. Accessibility clean across **15** screens — the sign-in screen is now audited too, before signing in, which it never was. The login screen was screenshotted at 1440, 900 and 390 px wide and read back for the vendor name and both numbers.
-Docs: `Memory.md` CURRENT STATE rewritten from production rather than from memory · Rules §1a/1b/1c · Design §9 · Architecture file tree · Deploy (brand artwork, the dev/build clash, the extended sweep) · Go-live-checklist (a standing "where Himal actually stands" table, §6 rewritten around the admin login, a new §6a for the sign-in screen, print-format line deleted).
+Docs: `Memory.md` CURRENT STATE rewritten from production rather than from memory · Rules §1a/1b/1c · Design §9 · Architecture file tree · Deploy (brand artwork, the dev/build clash, the extended sweep) · Go-live-checklist (a standing "where Chunidevi actually stands" table, §6 rewritten around the admin login, a new §6a for the sign-in screen, print-format line deleted).
 
 **The User Guide had two things in it that should not have been.** It published `admin / admin123` and `bikash / staff123` to the owner in print — twice, once on the welcome card and once in the login section — and its cover was still ruled in the retired Faarma orange `#e87e28`, which Design.md has said never returns since the rename. Both fixed, the accent is now magenta-600, the cover carries the real `logo-main.png` (the `.cover img` CSS rule had been sitting there unused since the guide was written), the welcome card no longer describes ClinicNP as pharmacy-only, and `01-login.png` was re-captured. Rebuilt: 6.5 MB, `node scripts/build-guide.mjs`. **Only that one screenshot was re-captured** — the rest were taken against seeded demo data and re-running the whole capture against production, which now has no bills or patients, would replace a guide full of worked examples with a guide full of empty screens.
 
@@ -507,7 +509,7 @@ Still live: **`admin` / `admin123`.** The owner has said, more than once, that t
 
 The owner asked for four things in one message: a Clinic tab for a doctor's booked consultations, a way to configure doctors like laboratories are configured, a Doctor login that sees only their own list on a phone, and an alert — on the phone and by email — the moment a consultation is booked.
 
-**The first thing to say is that this contradicted a standing rule.** Rules §2.4 read "no appointments, no scheduling, no SMS, no patient portal, no telemedicine in v2". It was written to stop the product drifting into a hospital information system, and it was right to be there. The owner asked for this specifically and it is a diary, not a scheduling engine — Himal was keeping it on paper on one desk, which is exactly the failure the software exists to end. Built, and §2.4 rewritten so it says what is now in and what is still firmly out (D-115). Nothing else on that list moved: no SMS, no patient portal, no patient-facing booking, no recurring bookings, no queue numbers, no calendar sync.
+**The first thing to say is that this contradicted a standing rule.** Rules §2.4 read "no appointments, no scheduling, no SMS, no patient portal, no telemedicine in v2". It was written to stop the product drifting into a hospital information system, and it was right to be there. The owner asked for this specifically and it is a diary, not a scheduling engine — Chunidevi was keeping it on paper on one desk, which is exactly the failure the software exists to end. Built, and §2.4 rewritten so it says what is now in and what is still firmly out (D-115). Nothing else on that list moved: no SMS, no patient portal, no patient-facing booking, no recurring bookings, no queue numbers, no calendar sync.
 
 **Doctors were already half there.** `doctors`, `lib/repos/doctors.ts`, Settings → Doctors and the doctor-share reports have existed since Phase 3. This session gave a doctor an email, a link to a sign-in, and two alert switches, rather than building a second doctor.
 
@@ -523,7 +525,7 @@ Decisions/assumptions: D-115 to D-125.
 Schema changes: **`0018_consultations.sql`** — `users` rebuilt again for the `doctor` role (third time; the CHECK is still the reason), `doctors` gains `email`, `user_id`, `notify_push`, `notify_email`, plus new `appointments`, `push_devices` and `alerts_sent`. Applied; `foreign_key_check` clean; `users`/`doctors`/`patients` row counts unchanged. **Production has run it.**
 New dependency: **`web-push`** and its types (D-121). Alert delivery is RFC 8291 encryption plus a signed token per delivery service — well past the ~50 lines Rules §3 says to hand-roll. Email needed nothing: `lib/email.ts` is one `fetch` at Resend.
 Broke/fixed: nothing existing broke. Three things the click-through caught that reading would not have: the clinic module defaults **off** on a fresh company row, so a scratch install 404s every clinic route until it is switched on; `counters` uses `next_value`, not `value`; and a doctor signing in was pushed to `/dashboard` by the login form and only then turned around by the layout — one wasted hop and a flash of somebody else's screen. `/` is now the front door and routes by role, and `manifest.json` starts there too, so an installed app opens on the right screen for whoever holds the phone.
-Verified: **374 tests across 33 files**, up from 343 — 31 new in three files: `appointment-types` for the clock arithmetic, `consultations.integration` for idempotency, clashes, cancellation, moving and one doctor not seeing another's list, and `phone-alerts` which encrypts a real browser key and proves the failure is the connection rather than the crypto. Typecheck, sweep, and a clean `pnpm build`. Clicked through the running build against a throwaway database at 1440px as the owner and at 390px as the doctor: the board, a doctor's day, the booking dialog with patient search, a booking that landed, Settings → Doctors, the doctor's list and their details — and the four screens a doctor must not reach, each of which turned them around. `alerts_sent` was also checked with nothing configured, which is how Himal will first see it.
+Verified: **374 tests across 33 files**, up from 343 — 31 new in three files: `appointment-types` for the clock arithmetic, `consultations.integration` for idempotency, clashes, cancellation, moving and one doctor not seeing another's list, and `phone-alerts` which encrypts a real browser key and proves the failure is the connection rather than the crypto. Typecheck, sweep, and a clean `pnpm build`. Clicked through the running build against a throwaway database at 1440px as the owner and at 390px as the doctor: the board, a doctor's day, the booking dialog with patient search, a booking that landed, Settings → Doctors, the doctor's list and their details — and the four screens a doctor must not reach, each of which turned them around. `alerts_sent` was also checked with nothing configured, which is how Chunidevi will first see it.
 **Not configured yet, and this is the part that needs the owner.** `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` are in `.env.local` for local work only — the live site needs its own pair, generated once with `pnpm alert-keys` and **never changed** (D-122). Email needs `RESEND_API_KEY` and `MAIL_FROM` on a domain Resend has been shown to own. Until each is set the screens say so plainly and bookings still save.
 **A note for testing alerts:** the app's offline layer is switched off under `pnpm dev`, so there is nothing installed in the browser to receive an alert. Alerts can only be tested against `pnpm build && pnpm start`, or the deployed site.
 Still live: **`admin` / `admin123`.** Untouched, unmentioned to the owner, and not fixed.
@@ -644,7 +646,7 @@ Production is at 939, so the same run there lands at **2,019**.
 Two things the owner has to accept as guesses, both flagged in the import
 README: **strip size is 10** unless the pack is not a strip, and a
 **manufacturer is left blank** wherever it was not certain rather than filled
-in with something plausible. The reliable way to match exactly what Himal's own
+in with something plausible. The reliable way to match exactly what Chunidevi's own
 distributors sell is still to import a supplier's price list through the same
 importer.
 
@@ -689,7 +691,7 @@ typecheck, 504 tests, audit, a production build, and 14 browser checks against a
 typing a whole word takes 1.3s.
 
 **Still the honest gap.** These are real products to the best of my knowledge of
-the Indian and Nepali market, not Himal's distributors' actual range. A price
+the Indian and Nepali market, not Chunidevi's distributors' actual range. A price
 list from Remedies, Surya, K.B. or Navya Jyoti run through the same importer
 would be their names, their pack sizes and their spellings — and would match the
 invoice reader first time.
@@ -699,7 +701,7 @@ invoice reader first time.
 The owner sent `items_ref.xlsx` — a stock report out of the software another
 Kathmandu pharmacy runs — with one instruction: read the **Prodname column
 only**, add what is missing, repeat nothing. The stock, batch numbers, purchase
-dates and amounts in that file are that shop's, not Himal's, and none of them
+dates and amounts in that file are that shop's, not Chunidevi's, and none of them
 were read.
 
 The sheet is a batch-level stock report, not an item list: 4,970 rows where
@@ -732,3 +734,56 @@ database built from `0021` with all four catalogue files in order (6,639 items,
 every pack shape exactly rather than by guessing from the name. It was not read
 because the instruction was Prodname only; it is one flag away if the owner
 wants it.
+
+### C-024  ·  2083-06-09  ·  The product moves to Chunidevi Health Polyclinic
+
+**The install changed hands.** Every occurrence of *Himal Health Clinic Pvt.
+Ltd.* — in the PRD, Rules, Phases, Deploy, the go-live checklist, this file, the
+migration rationale comments, four source comments and three tests — now reads
+**Chunidevi Health Polyclinic Pvt. Ltd.** 56 replacements across 24 files.
+
+**The one thing the rename had to not touch was `Himalaya`**, the medicine
+brand, which appears 71 times in `items.csv` and 75 more across the catalogue
+templates. Every rule either matched a longer phrase or guarded with `(?!aya)`,
+and the uppercase `HIMALAYA` in `pharmacy-items.REF.csv` was left alone by the
+same guard being case-sensitive. Verified after: 0 stray `Himal`, 4 files still
+carrying `Himalaya` at their original counts.
+
+Three infrastructure facts moved with it and were corrected against the working
+tree, `git remote -v` and `.env.local` rather than renamed blindly: the repo
+path, `github.com/ShiwamPaudel/ClinicNP-CHP`, and the Turso host
+`clinicnpforchp-clinicnpforchp`.
+
+**A new, empty database.** Read-only check found **0 tables** — so `db:migrate`
+took it from nothing to **21 migrations** in one run.
+
+**The catalogue, rebuilt from its own sources.** `items.csv` — the file the
+owner supplied — is a dump of the `items` table alone: 6,646 rows with no unit
+columns at all. `db:import-items` cannot read it, and an item with no units
+cannot be sold. The packaging was recovered rather than guessed: the four
+`pharmacy-items.*.csv` templates these items were originally imported from
+(C-021, C-022, C-023) still carry `unit1/2/3`, and covered **6,637** of them;
+`item_units` in the last prod backup covered **8** more; the last one,
+`HYTIDE 25`, was renamed in the app after import and was matched to its template
+row `HYTIDE-25MG` by a stated alias, not by fuzzy matching. Nothing was derived
+from `shape`.
+
+The join was written out as `import-templates/chunidevi-items.csv`, 6,646 rows
+in the importer's own format, with `items.csv` as the authority for name,
+generic, category, manufacturer, shape and reorder level. **All rates left
+blank** — prices, services and stock come later, and the counter refuses an
+unpriced item rather than billing Rs 0.
+
+Imported: **6,646 items, 14,187 units**, 0 rows rejected. Verified against
+`items.csv`: every one of its 6,646 names present, category split identical
+(5,664 · 778 · 204), no item without a base unit, none without a default selling
+unit. 504 tests pass across 43 files.
+
+**Still the owner's, and blocking:** `pnpm db:bootstrap` has not been run — no
+company row, no fiscal year, no Admin user. It needs the real PAN, address and
+phone, and `--clinic` is not optional. See the go-live checklist.
+
+**Fixed on the way past:** `pnpm-workspace.yaml` had `allowBuilds` entries still
+reading *"set this to true or false"*, so pnpm skipped esbuild's build script and
+every `tsx` command in `package.json` failed with `ERR_MODULE_NOT_FOUND`. Set to
+real booleans.

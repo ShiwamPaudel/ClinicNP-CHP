@@ -71,7 +71,7 @@ export async function createPurchaseAction(input: unknown): Promise<ActionResult
       0,
     );
     // The supplier's own order: lines, then the discount on the whole bill,
-    // then VAT on what is left (D-143). Every invoice from Himal's
+    // then VAT on what is left (D-143). Every invoice from Chunidevi's
     // distributors reads this way — "Discount", then "Taxable Amount",
     // then "VAT".
     if (d.billDiscountPaisa > netSubtotal) {

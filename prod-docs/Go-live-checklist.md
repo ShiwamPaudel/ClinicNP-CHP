@@ -8,41 +8,40 @@ clinic bills a real patient.
 
 ---
 
-## Where Himal Health Clinic actually stands  ·  2083-05-25
+## Where Chunidevi Health Polyclinic actually stands  ·  2083-06-09
 
 Kept current so nobody re-does finished work or assumes unfinished work is done.
 
-**Done and verified in production:**
-company name, address and phone · letterhead image uploaded (it carries the PAN
-and DDA, so the bill does not print them again) · both modules on · fiscal year
-2083/84 open · 478 items and 907 units loaded · five pieces of furniture placed
-on the shop floor plan · one laboratory partner (Proton Preventive Lab) · two
-service groups and two services · 17 migrations applied · all test data cleared,
-patient numbering restarted at 1.
+**This is a fresh install.** The database is new: it carries the schema and the
+medicine catalogue and nothing else. None of the figures from the previous
+install carry over — the code is the same and as mature as it was, but the data
+starts at zero.
+
+**Done and verified against the database, 2083-06-09:**
+21 migrations applied (`_migrations` ends at `0021_purchase_bill_discount.sql`)
+· **6,646 items and 14,187 units loaded** from
+`import-templates/chunidevi-items.csv` (Medicine 5,664 · Other 778 ·
+Consumable 204; every item has a base unit and a default selling unit) · no
+prices, no stock, no bills, no patients.
 
 **Left, and all of it needs the clinic in the room:**
 
 | | What | Where |
 |---|---|---|
-| 🔴 | **Replace `admin` / `admin123`** — blocking, see §6 | Settings → Users |
+| 🔴 | **Run `pnpm db:bootstrap`** — company row, fiscal year, Admin user. Nothing below can be done until this exists. Needs the real PAN; see Deploy.md | terminal |
+| 🔴 | **Replace the bootstrap admin password and PIN** at first sign-in — blocking, see §6 | Settings → Users |
 | 🔴 | Real user accounts, roles and PINs | Settings → Users |
+| 🟠 | Company address and phone; upload the letterhead image (it carries the PAN and DDA, so the bill does not print them again). The artwork is in the repo at `public/Chunidevi Health Polyclinic Pvt. Ltd. - Logo.jpeg` | Settings → Company |
 | 🟠 | Services, rates, doctors, follow-up rules | Settings → Services / Doctors |
-| 🟠 | Prices for the 478 medicines, or let the counter set them as they sell | Items → Set prices |
+| 🟠 | Prices for the 6,646 medicines, or let the counter set them as they sell | Items → Set prices |
 | 🟠 | Opening stock: batch numbers and expiry dates | Stock → Opening stock |
-| 🟡 | `company.pan_no` is empty — only the stock-out and refund slips use it | Settings → Company |
-| 🟡 | Invoice footer reads "ClincNP", missing an `i` | Settings → Company |
+| 🟠 | Laboratory partners | Settings → Lab partners |
+| 🟡 | Shop floor plan and racks, once the shelving is decided | Settings → Floor plan |
+| 🟡 | Connect a private Blob store, or nothing is backed up on its own | Deploy.md |
 
-**2083-06-08 — 0019, 0020 and 0021 are all live. The invoice reader (C-020)
-needs no migration.** The note below is kept for the storage item,
-which is still open.
-
-**2083-06-06 — dues, the discount switch, the Nepali/English date boxes, the
-optional manufacture date and kept backups are built, not yet live.**
-Production is trading (8 bills, 10 patients, all cash so far) and is still at
-**18 migrations**: the pushes since were refused by the build guard, as they
-should be. `0019_dues.sql` and `0020_date_calendar.sql` have been rehearsed
-together on a copy of production's real data and must be run on production
-**before** the code is deployed. See Deploy.md, "0019 and 0020 together".
+**Until an item has a price it cannot be sold** — the counter refuses it and
+says why. That is deliberate: a catalogue arrives before a price list does, and
+the alternative is a real bill with Rs 0 on it.
 
 | | What | Where |
 |---|---|---|
@@ -80,9 +79,10 @@ together on a copy of production's real data and must be run on production
 
 - [ ] **Company name** exactly as it should print on an invoice.
 - [ ] **Letterhead image uploaded** under Settings → Company. It is the band
-      across the top of every invoice, and at Himal it already carries the PAN
-      and DDA numbers, so read them off the image and check them against the
-      registration certificate. A wrong number there is wrong on every bill.
+      across the top of every invoice. The artwork is in the repo at
+      `public/Chunidevi Health Polyclinic Pvt. Ltd. - Logo.jpeg`. If it carries
+      the PAN or DDA number, read them off the image and check them against the
+      registration certificate — a wrong number there is wrong on every bill.
 - [ ] **PAN** entered and checked against their registration certificate. The
       invoice does not print it — the letterhead does — but the stock-out note
       and the refund note are plain slips with no letterhead, and they use this.
@@ -94,9 +94,9 @@ together on a copy of production's real data and must be run on production
       is not registered is a real problem for them.
 - [ ] **Invoice footer** set to whatever they want at the bottom of a bill. It
       is the only line that prints after the total, and it prints on every bill,
-      so read it back to them character by character. Himal's said
-      "Billed with ClincNP" — one letter short of the product's own name —
-      for its first weeks.
+      so read it back to them character by character. The previous install's
+      read "Billed with ClincNP" — one letter short of the product's own name —
+      for its first weeks before anyone noticed.
 - [ ] **Rounding** decided: on if they round the final amount to the rupee.
 
 There is no print-format choice to make. There is one bill, on A4, and the
@@ -107,7 +107,7 @@ letterhead image is what makes it theirs.
 ## 2. Modules
 
 - [ ] **Settings → Modules**: switch on what this clinic actually does. Both, for
-      Himal Health Clinic.
+      Chunidevi Health Polyclinic.
 - [ ] With the intended modules on, walk the menu and confirm nothing is offered
       that this clinic does not do.
 

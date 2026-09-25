@@ -2,7 +2,7 @@
 --
 -- Append-only: never edit once applied.
 --
--- Himal does not run its own laboratory. It bills a test, takes the sample,
+-- Chunidevi does not run its own laboratory. It bills a test, takes the sample,
 -- sends it out, and waits for a report to come back — and until now the
 -- software knew about the first of those four and nothing else. A test was
 -- billed and then vanished from view, which meant the question a clinic asks
