@@ -23,7 +23,7 @@
 
 *Last rewritten 2083-05-26 (C-014); production figures re-read 2083-06-06 (C-016). Everything below is verified against production, not remembered.*
 
-> **This install's database is new and empty.** Read-only check 2083-06-09: `clinicnpforchp-clinicnpforchp.aws-ap-south-1.turso.io` has **0 tables** — no `_migrations`, no `company`, no users. `db/migrations` holds 21 files ending at `0021_purchase_bill_discount.sql`, so the first `pnpm db:migrate` takes this database straight to 0021. **Still the owner's:** run `pnpm db:bootstrap` (company row, fiscal year, Admin user) and connect a private Blob store (Deploy.md, "The storage has to be a private store") — until a *Nightly* row with *Download* appears, nothing is backed up on its own.
+> **This install's database is new and open for business.** Checked 2083-06-09 against `clinicnpforchp-clinicnpforchp.aws-ap-south-1.turso.io`: **21 migrations** applied (ends at `0021_purchase_bill_discount.sql`), company row set with PAN and both modules on, fiscal year **2083/84 open**, one admin user, the clinic's **letterhead set**, and **6,646 items and 14,187 units**. Sign-in verified end to end against a running server. **The clinic is now trading** (2083-06-10: 2 bills, 2 patients, 2 purchases, 4 batches), has entered its own doctors, groups, one laboratory partner and its OPD/USG services, and carries **245 laboratory tests at rate 0**. Prices, opening stock and the rest of the services are still the clinic's to enter. **Still the owner's:** 🔴 the admin account was bootstrapped with a deliberately weak password — eight repeated digits, chosen only to clear the length guard — and it must be replaced before the clinic is reachable from outside. (Rule 7: the value is not written here.) Then connect a private Blob store (Deploy.md, "The storage has to be a private store"); until a *Nightly* row with *Download* appears, nothing is backed up on its own.
 >
 > The figures in the paragraph above replaced the previous install's, which had run 0021 with 16 `backups` rows. **The code is unchanged and still at the same maturity**; what reset is the data.
 
@@ -779,11 +779,127 @@ Imported: **6,646 items, 14,187 units**, 0 rows rejected. Verified against
 (5,664 · 778 · 204), no item without a base unit, none without a default selling
 unit. 504 tests pass across 43 files.
 
-**Still the owner's, and blocking:** `pnpm db:bootstrap` has not been run — no
-company row, no fiscal year, no Admin user. It needs the real PAN, address and
-phone, and `--clinic` is not optional. See the go-live checklist.
+**Bootstrapped, after fixing the reason it could not be.** `db/bootstrap.ts`
+was the **only** script in `db/` without the `process.loadEnvFile` block the
+other six share, so it could never see `.env.local` and stopped at
+*"TURSO_DATABASE_URL is not set"* no matter what was in the file. That is a
+pre-existing bug, not something the rename caused — bootstrap has simply never
+been runnable this way. Added the same block, with a comment saying why.
+
+It then refused a second time, correctly: the password guard wants 8 characters
+and the one supplied was 4. Nothing had been written — the guard runs before the
+client is even constructed. Re-run with a longer one, it wrote the company row
+(PAN, address, phone, **pharmacy + clinic**), opened fiscal year **2083/84** and
+created one admin. Both the password and the PIN were then verified back through
+the same salted scrypt the app signs in with, because a bootstrap that produces
+a user who cannot sign in is only discovered at the clinic on the first morning.
+
+**🔴 The admin password is eight repeated digits**, chosen against advice purely
+to clear the length guard. It is the blocking item at the top of the go-live
+checklist and must be replaced before the site is reachable from outside.
 
 **Fixed on the way past:** `pnpm-workspace.yaml` had `allowBuilds` entries still
 reading *"set this to true or false"*, so pnpm skipped esbuild's build script and
 every `tsx` command in `package.json` failed with `ERR_MODULE_NOT_FOUND`. Set to
 real booleans.
+
+### C-025  ·  2083-06-09  ·  The sign-in screen that would not load, and the clinic's own letterhead
+
+**"There is a problem with the server configuration"** is NextAuth saying
+`AUTH_SECRET` is missing, and it was: `.env.local` carried the key with an empty
+value. Nothing in the logs says so more plainly than the screen does, which is
+why it is worth writing down once.
+
+Filled the **empty** values only, leaving `VAPID_SUBJECT` and both Turso
+settings as they were: `AUTH_SECRET` and `CRON_SECRET` from
+`randomBytes(32).toString('base64')`, and a VAPID pair from `pnpm alert-keys` —
+one invocation, because the script prints a **matched** pair and taking the
+public key from one run and the private from another silences every phone.
+
+`BLOB_READ_WRITE_TOKEN` is the one that cannot be filled here: Vercel issues it
+when a private Blob store is connected. Left empty with a comment above it
+saying what breaks meanwhile, rather than a value that would look set.
+
+**The letterhead went in as data, not as code.** `company.logo_url` holds a JPEG
+data URL — that is the designed path (`src/lib/logo-image.ts`): it is carried
+with the company profile, cached with it, backed up with it, and already in the
+page before anybody presses Print, which is what makes it work at a counter with
+no internet. The supplied file is 872x546 and **46 KB as a data URL against a
+220 KB cap**, so it needed no downscaling, and the stored base64 round-trips to
+the same bytes. Setting that one row lit up the sign-in screen, the billing
+screen, the A4 invoice and the stock-out and refund slips at once — no component
+was touched.
+
+**The product's own icons were deliberately left alone.** `public/icons/*` and
+the manifest are ClinicNP's mark, and the sign-in screen is built as two halves
+— the software on the left, the clinic on the right. Putting the clinic's logo
+in the favicon would collapse that distinction; it is one command away
+(`node scripts/make-icons.mjs`) if the owner wants it.
+
+**Checked rather than assumed**, against a dev server on :3111: `/login` returns
+200 with the letterhead in the HTML, the right password returns a session for
+Shreekrishna with role `admin`, `/dashboard` is 200 with that cookie and 307 to
+`/login` without it, and a wrong password comes back `CredentialsSignin`.
+
+### C-026  ·  2083-06-10  ·  245 laboratory tests, a purchase line that fits on one line, and a menu that scrolls
+
+**The clinic is trading now** — 2 bills, 2 patients, 2 purchases, 7 stock moves,
+its own four doctors and ten service groups. Everything below was done against
+that, not against an empty database, which is why the import backs up first and
+why the screen changes were kept to the three that were asked for.
+
+**245 laboratory tests.** `services_lab.csv` is another install's `services`
+table, so its `id`, `group_id` and `default_lab_partner_id` all point at rows
+that do not exist here. None were carried across: new `ulid()` each, the group
+and the laboratory resolved **by name in this database**. Only what describes
+the test was read — name, code, sample type, whether a report comes back.
+
+The three judgement calls were the owner's, not mine. The group is the
+**existing `grp_lab` "Laboratory"**, not a new "Laboratory Services" beside it,
+because a second lab group in the counter's list is a trap. Every test is
+**outsourced with NOVUS PATH LAB AND DIAGNOSTIC CENTER as the default**, since
+`bills.ts` refuses an outsourced line with no laboratory on it and a default
+makes them billable without a per-line choice. And **every rate is 0**, with
+partner cost 0 beside it: the source file's prices are another clinic's, and a
+wrong price prints on a real bill where a missing one is simply refused.
+
+Verified after: 245 in the group, 0 with a non-zero rate or partner cost, 0 not
+outsourced, 0 orphaned partner references, all 245 CSV names present, and the
+5 services that were already there untouched. Kept as
+`db/import-lab-services.ts` — dry run by default, backs up `services` before the
+first write, skips a name already in the target group so a second run is safe.
+
+**The purchase line is one line.** Item · Unit · Batch · Expiry · Qty · Cost now
+read left to right in the order they appear on a supplier's bill, instead of
+splitting across two blocks with the eye jumping between them. It stacks below
+`lg`. The "On the bill: …" note from the photo reader moved out of the Item box
+to full width underneath, so one line being taller no longer ragged-edges the
+whole row.
+
+**Mfg date is gone from purchase entry** — not from the schema. `batches.
+mfg_date_ad` stays, the validator still accepts the field, and the form simply
+sends `""`, which was already stored as NULL. Nothing behind the screen changed,
+so no migration and no server edit. Opening stock keeps its Manufactured box;
+only purchase entry was asked for.
+
+**An expiry can now be typed.** `DatePickerBS` grew an opt-in `typable` prop,
+**off by default** — 8 screens use that component and only two of them are
+somebody copying a date off a pack. On those two the box is an input with the
+calendar still one click away. Typing is read in the shop's own calendar, the
+one on screen and the one printed on the pack.
+
+The parsing is in `calendar-view.ts` with the rest of the date maths, not in the
+component, because the failure worth guarding is silent: a box that accepts
+almost-a-date and commits the wrong day. A half-typed `2083-0` returns null and
+**does not commit**, so backspacing never destroys the saved value; `2026-02-31`
+is refused rather than rolled forward to 3 March the way `new Date` would.
+8 new tests, 512 passing across 43 files.
+
+**The menu scrolls.** `<aside>` is `h-full` inside an `overflow-hidden` parent,
+so on a short screen the lower half of the menu was simply unreachable. The nav
+list is now its own `min-h-0 flex-1 overflow-y-auto` region: `min-h-0` is the
+part that matters, since a flex child will not shrink below its content without
+it. The wordmark stays at the top and the name and Sign out stay at the bottom,
+which is what somebody reaches for on a shared counter machine. Checked at
+1600x560: scrollable, reaches the bottom, footer still visible — and at
+1600x900 it does **not** scroll, so no scrollbar appears where none is needed.

@@ -12,7 +12,9 @@ import {
   canStep,
   formatInCalendar,
   monthGrid,
+  numericInCalendar,
   parseBsValue,
+  parseTypedDate,
   stepView,
   switchCalendar,
   todayBsText,
@@ -37,6 +39,14 @@ export interface DatePickerBSProps {
   placeholder?: string;
   /** Offer "Clear", for a date that may be left empty. Emits "". */
   clearable?: boolean;
+  /**
+   * Also let the date be typed, not only picked off the grid. Off by default:
+   * on most screens a date is chosen, and a box that looks typeable invites
+   * free text nobody validates. It is on where somebody is copying a date off
+   * a piece of paper — an expiry off a medicine pack — because reaching for
+   * 2027 on a month grid is eleven clicks and typing it is ten keys.
+   */
+  typable?: boolean;
 }
 
 /**
@@ -54,6 +64,7 @@ export function DatePickerBS({
   id,
   placeholder = "Select date",
   clearable = false,
+  typable = false,
 }: DatePickerBSProps) {
   const shopCalendar = useDateCalendar();
   const selected = parseBsValue(value) ? value! : "";
@@ -61,6 +72,14 @@ export function DatePickerBS({
   const [open, setOpen] = useState(false);
   /** How far left the popup moves so it stays on a narrow screen. */
   const [shift, setShift] = useState(0);
+  /**
+   * What is in the typed box while somebody is in it. The committed value
+   * stays in `value` throughout: a half-typed "2083-0" parses to nothing and
+   * simply does not commit, so backspacing through a date never destroys the
+   * one already saved.
+   */
+  const [text, setText] = useState("");
+  const [typing, setTyping] = useState(false);
   const [view, setView] = useState<MonthView>(() =>
     viewContaining(shopCalendar, selected),
   );
@@ -108,26 +127,84 @@ export function DatePickerBS({
     setOpen(false);
   }
 
+  /** Typing is read in the shop's own calendar — the one on screen, and the
+   *  one printed on the pack — not in whichever grid the popup is showing. */
+  function commitTyped(raw: string) {
+    setText(raw);
+    if (raw.trim() === "") {
+      if (clearable && selected) onChange("");
+      return;
+    }
+    const bsText = parseTypedDate(raw, shopCalendar);
+    if (bsText) onChange(bsText);
+  }
+
   const grid = monthGrid(view);
   const todayText = todayBsText();
   const label = selected ? formatInCalendar(selected, shopCalendar) : placeholder;
 
   return (
     <div ref={rootRef} className="relative">
-      <button
-        ref={buttonRef}
-        type="button"
-        id={id}
-        onClick={toggleOpen}
-        aria-expanded={open}
-        className={cn(
-          "flex h-10 w-full items-center justify-between rounded-[8px] border border-line bg-cream-50 px-3 text-left text-[14px]",
-          selected ? "text-sage-950" : "text-sage-300",
-        )}
-      >
-        <span className="truncate">{label}</span>
-        <Calendar className="h-4 w-4 shrink-0 text-sage-500" />
-      </button>
+      {typable ? (
+        <div className="flex h-10 w-full items-center rounded-[8px] border border-line bg-cream-50 pl-3 pr-1 focus-within:border-sage-500 focus-within:ring-2 focus-within:ring-sage-500/30">
+          <input
+            id={id}
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            spellCheck={false}
+            // Formatted when it is being read, plain digits when it is being
+            // edited: "6 Ashwin 2083" is the clearer label but nobody can type
+            // into it.
+            value={typing ? text : label}
+            placeholder={typing ? "YYYY-MM-DD" : placeholder}
+            onFocus={() => {
+              setTyping(true);
+              setText(numericInCalendar(selected, shopCalendar));
+            }}
+            onChange={(e) => commitTyped(e.target.value)}
+            onBlur={() => setTyping(false)}
+            onKeyDown={(e) => {
+              // This box lives inside forms whose Enter would otherwise save
+              // the whole purchase.
+              if (e.key === "Enter") {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+            }}
+            className={cn(
+              "h-full min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-sage-300",
+              selected || typing ? "text-sage-950" : "text-sage-300",
+            )}
+          />
+          <button
+            ref={buttonRef}
+            type="button"
+            onClick={toggleOpen}
+            aria-expanded={open}
+            aria-label="Open calendar"
+            title="Open calendar"
+            className="rounded-[6px] p-2 text-sage-500 hover:bg-cream-200 hover:text-sage-900"
+          >
+            <Calendar className="h-4 w-4 shrink-0" />
+          </button>
+        </div>
+      ) : (
+        <button
+          ref={buttonRef}
+          type="button"
+          id={id}
+          onClick={toggleOpen}
+          aria-expanded={open}
+          className={cn(
+            "flex h-10 w-full items-center justify-between rounded-[8px] border border-line bg-cream-50 px-3 text-left text-[14px]",
+            selected ? "text-sage-950" : "text-sage-300",
+          )}
+        >
+          <span className="truncate">{label}</span>
+          <Calendar className="h-4 w-4 shrink-0 text-sage-500" />
+        </button>
+      )}
 
       {open && (
         <div

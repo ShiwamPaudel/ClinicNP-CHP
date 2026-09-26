@@ -282,3 +282,67 @@ export function formatInCalendar(value: string, calendar: DateCalendar): string 
 export function todayBsText(): string {
   return bsToDbText(today());
 }
+
+/**
+ * A BS text value as plain digits in one calendar: "2083-06-09" or
+ * "2026-09-25". This is the form somebody types, and the form a typed box
+ * shows them while they are editing it.
+ */
+export function numericInCalendar(
+  value: string,
+  calendar: DateCalendar,
+): string {
+  const bs = parseBsValue(value);
+  if (!bs) return "";
+  if (calendar === "bs") return bsToDbText(bs);
+  return adToIso(toAD(bs));
+}
+
+/**
+ * Read a date somebody typed and return it as BS text, or null if it is not a
+ * date yet.
+ *
+ * The text is read in whichever calendar the box is showing, because that is
+ * the one the person is reading off the screen — and for an expiry it is the
+ * one printed on the pack. Separators are forgiving (`-`, `/`, `.`) and a
+ * single-digit month or day is accepted, since nobody types the leading zero
+ * on 2083-6-9. Everything else is refused rather than guessed at: a half-typed
+ * "2083-0" is not a date, and returning null keeps the stored value untouched
+ * while the rest of it is still being typed.
+ */
+export function parseTypedDate(
+  text: string,
+  calendar: DateCalendar,
+): string | null {
+  const m = text.trim().match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 32) return null;
+
+  if (calendar === "bs") {
+    // parseBsValue does the real check: it refuses a day the month does not
+    // have, and a year outside the conversion table.
+    return parseBsValue(bsToDbText({ year, month, day })) ? bsToDbText({ year, month, day }) : null;
+  }
+
+  // An AD date has to round-trip. `new Date(2026, 1, 31)` silently becomes
+  // 3 March, so the only way to know 31 February was refused is to look.
+  const ad = new Date(year, month - 1, day);
+  if (
+    ad.getFullYear() !== year ||
+    ad.getMonth() !== month - 1 ||
+    ad.getDate() !== day
+  ) {
+    return null;
+  }
+  try {
+    const bs = toBS(ad);
+    const bsText = bsToDbText(bs);
+    return parseBsValue(bsText) ? bsText : null;
+  } catch {
+    // Outside the conversion table.
+    return null;
+  }
+}

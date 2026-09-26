@@ -23,7 +23,6 @@ interface LineState {
   itemId: string;
   unitLevel: number;
   batchNo: string;
-  mfgDateBs: string;
   expiryDateBs: string;
   qty: string;
   freeQty: string;
@@ -43,7 +42,6 @@ function blankLine(): LineState {
     itemId: "",
     unitLevel: 0,
     batchNo: "",
-    mfgDateBs: "",
     expiryDateBs: "",
     qty: "1",
     freeQty: "0",
@@ -198,12 +196,6 @@ export function PurchaseForm({
         toast.error(`Line ${i + 1}: enter the expiry date.`);
         return;
       }
-      if (l.mfgDateBs && l.mfgDateBs > l.expiryDateBs) {
-        toast.error(
-          `Line ${i + 1}: it cannot expire before it was manufactured. Check the dates.`,
-        );
-        return;
-      }
     }
     if (billDiscountMode === "percent" && Number(billDiscountPercent) > 100) {
       toast.error("A discount cannot be more than 100%.");
@@ -220,7 +212,10 @@ export function PurchaseForm({
       lines: lines.map((l) => ({
         itemId: l.itemId,
         batchNo: l.batchNo.trim(),
-        mfgDateBs: l.mfgDateBs || "",
+        // Not collected on this screen any more. The server still
+        // accepts it and stores empty as NULL, so nothing behind
+        // the form had to change.
+        mfgDateBs: "",
         expiryDateBs: l.expiryDateBs,
         unitLevel: Number(l.unitLevel),
         qty: Number(l.qty) || 0,
@@ -310,7 +305,19 @@ export function PurchaseForm({
                     this row. Check all three against the paper.
                   </p>
                 )}
-                <div className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr]">
+                {/* One row per medicine: item, unit, batch, expiry, quantity
+                    and cost read left to right in the order they appear on the
+                    supplier's bill, so the eye does not jump between two
+                    blocks while checking a line against the paper. It stacks
+                    below lg, where a single row would be unreadable. */}
+                <div
+                  className={
+                    "grid gap-3 sm:grid-cols-2 sm:items-end " +
+                    (showBonus
+                      ? "lg:grid-cols-[minmax(0,1.9fr)_0.85fr_1fr_1.2fr_0.62fr_0.62fr_0.9fr_auto]"
+                      : "lg:grid-cols-[minmax(0,2.1fr)_0.9fr_1.05fr_1.25fr_0.7fr_0.95fr_auto]")
+                  }
+                >
                   <Field label="Item">
                     <Select
                       value={l.itemId}
@@ -323,33 +330,6 @@ export function PurchaseForm({
                         </option>
                       ))}
                     </Select>
-                    {/* What the paper actually said, so the person can check
-                        the guess — or find the medicine themselves when there
-                        was no guess to make. */}
-                    {l.printedName && (
-                      <p
-                        className={
-                          "mt-1 text-[12px] " +
-                          (l.itemId ? "text-sage-500" : "font-medium text-danger-600")
-                        }
-                      >
-                        {l.itemId ? (
-                          <>On the bill: {l.printedName}</>
-                        ) : (
-                          <>
-                            &ldquo;{l.printedName}&rdquo; is not in the list — choose it, or{" "}
-                            <Link
-                              href="/items/new"
-                              target="_blank"
-                              className="underline underline-offset-2"
-                            >
-                              add it
-                            </Link>{" "}
-                            and reload the list.
-                          </>
-                        )}
-                      </p>
-                    )}
                   </Field>
                   <Field label="Unit">
                     <Select
@@ -373,26 +353,14 @@ export function PurchaseForm({
                       onChange={(e) => setLine(i, { batchNo: e.target.value })}
                     />
                   </Field>
-                </div>
-                <div
-                  className={
-                    "mt-3 grid gap-3 sm:items-end " +
-                    (showBonus
-                      ? "sm:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto]"
-                      : "sm:grid-cols-[1fr_1fr_1fr_1fr_auto]")
-                  }
-                >
-                  <Field label="Mfg date (optional)">
-                    <DatePickerBS
-                      value={l.mfgDateBs}
-                      onChange={(v) => setLine(i, { mfgDateBs: v })}
-                      clearable
-                    />
-                  </Field>
                   <Field label="Expiry date *">
+                    {/* Typed or picked: an expiry is read off the pack, and
+                        stepping a month grid out to 2027 is slower than
+                        typing it. */}
                     <DatePickerBS
                       value={l.expiryDateBs}
                       onChange={(v) => setLine(i, { expiryDateBs: v })}
+                      typable
                     />
                   </Field>
                   <Field label="Qty">
@@ -440,6 +408,35 @@ export function PurchaseForm({
                     )}
                   </div>
                 </div>
+                {/* What the paper actually said, so the person can check the
+                    guess — or find the medicine themselves when there was no
+                    guess to make. Full width under the row rather than inside
+                    the Item box, which would make one line taller than the
+                    rest of them. */}
+                {l.printedName && (
+                  <p
+                    className={
+                      "mt-2 text-[12px] " +
+                      (l.itemId ? "text-sage-500" : "font-medium text-danger-600")
+                    }
+                  >
+                    {l.itemId ? (
+                      <>On the bill: {l.printedName}</>
+                    ) : (
+                      <>
+                        &ldquo;{l.printedName}&rdquo; is not in the list — choose it, or{" "}
+                        <Link
+                          href="/items/new"
+                          target="_blank"
+                          className="underline underline-offset-2"
+                        >
+                          add it
+                        </Link>{" "}
+                        and reload the list.
+                      </>
+                    )}
+                  </p>
+                )}
               </div>
             );
           })}

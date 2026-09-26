@@ -9,7 +9,9 @@ import {
   clampView,
   formatInCalendar,
   monthGrid,
+  numericInCalendar,
   parseBsValue,
+  parseTypedDate,
   stepView,
   supportedAdRange,
   switchCalendar,
@@ -165,5 +167,77 @@ describe("writing a date out", () => {
     expect(parseBsValue("tomorrow")).toBeNull();
     expect(parseBsValue("2099-01-01")).toBeNull();
     expect(formatInCalendar("", "ad")).toBe("");
+  });
+});
+
+/**
+ * Typing a date instead of picking one. The danger here is the opposite of a
+ * misplaced click: a box that accepts almost-a-date and quietly commits the
+ * wrong day. Everything that is not unambiguously a date must return null and
+ * leave whatever was already saved alone.
+ */
+describe("parseTypedDate", () => {
+  it("reads a BS date typed in the Nepali calendar", () => {
+    expect(parseTypedDate("2083-06-09", "bs")).toBe("2083-06-09");
+  });
+
+  it("accepts the separators and the short forms people actually type", () => {
+    expect(parseTypedDate("2083/06/09", "bs")).toBe("2083-06-09");
+    expect(parseTypedDate("2083.06.09", "bs")).toBe("2083-06-09");
+    expect(parseTypedDate("2083-6-9", "bs")).toBe("2083-06-09");
+    expect(parseTypedDate("  2083-06-09  ", "bs")).toBe("2083-06-09");
+  });
+
+  it("converts a date typed in the English calendar", () => {
+    // The same day, written both ways.
+    const bs = parseTypedDate("2026-09-25", "ad");
+    expect(bs).not.toBeNull();
+    expect(formatInCalendar(bs!, "ad")).toBe("25 Sep 2026");
+  });
+
+  it("round-trips against numericInCalendar in both calendars", () => {
+    for (const value of ["2083-01-01", "2083-06-09", "2083-12-30"]) {
+      for (const cal of ["bs", "ad"] as const) {
+        expect(parseTypedDate(numericInCalendar(value, cal), cal)).toBe(value);
+      }
+    }
+  });
+
+  it("refuses a day that month does not have", () => {
+    // 31 February is not a date, and JS Date would silently roll it to March.
+    expect(parseTypedDate("2026-02-31", "ad")).toBeNull();
+    expect(parseTypedDate("2026-04-31", "ad")).toBeNull();
+  });
+
+  it("refuses half-typed and malformed text", () => {
+    for (const bad of [
+      "",
+      "2083",
+      "2083-0",
+      "2083-06",
+      "2083-06-",
+      "20836-09",
+      "83-06-09",
+      "2083-13-01",
+      "2083-06-40",
+      "2083-00-09",
+      "2083-06-00",
+      "next week",
+      "2083-06-09extra",
+    ]) {
+      expect(parseTypedDate(bad, "bs"), bad).toBeNull();
+    }
+  });
+
+  it("refuses a year outside the conversion table", () => {
+    expect(parseTypedDate("2200-01-01", "bs")).toBeNull();
+    expect(parseTypedDate("1800-01-01", "ad")).toBeNull();
+  });
+
+  it("numericInCalendar gives back plain digits, and nothing for a non-date", () => {
+    expect(numericInCalendar("2083-06-09", "bs")).toBe("2083-06-09");
+    expect(numericInCalendar("2083-06-09", "ad")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(numericInCalendar("", "bs")).toBe("");
+    expect(numericInCalendar("not-a-date", "ad")).toBe("");
   });
 });

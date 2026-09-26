@@ -94,7 +94,15 @@ export function Sidebar({
         </button>
       </div>
 
-      <Nav role={user.role} modules={modules} collapsed={collapsed} />
+      {/* The menu is the only part that scrolls. The wordmark stays at the top
+          and the person's name and Sign out stay at the bottom, because those
+          are what somebody reaches for on a shared counter machine. `min-h-0`
+          is what makes it work at all: a flex child will not shrink below its
+          content without it, so the list would otherwise push the footer off
+          the bottom of a short screen and take itself with it. */}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <Nav role={user.role} modules={modules} collapsed={collapsed} />
+      </div>
 
       <div className="mt-auto flex flex-col gap-1 border-t border-sage-700/50 pt-3">
         {!collapsed && (

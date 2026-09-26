@@ -21,32 +21,41 @@ starts at zero.
 21 migrations applied (`_migrations` ends at `0021_purchase_bill_discount.sql`)
 · **6,646 items and 14,187 units loaded** from
 `import-templates/chunidevi-items.csv` (Medicine 5,664 · Other 778 ·
-Consumable 204; every item has a base unit and a default selling unit) · no
-prices, no stock, no bills, no patients.
+Consumable 204; every item has a base unit and a default selling unit) ·
+**bootstrapped**: company name, address, phone and PAN set, both modules on,
+fiscal year **2083/84 open**, one admin user (`admin` / Shreekrishna) whose
+password and PIN were verified against the app's own scrypt · **letterhead
+set** from `public/Chunidevi Health Polyclinic Pvt. Ltd. - Logo.jpeg` (872x546,
+46 KB as a data URL against a 220 KB cap), so it already shows on the sign-in
+screen and on every bill and slip · **`.env.local` filled**: `AUTH_SECRET` and
+`CRON_SECRET` generated, a VAPID pair generated with `pnpm alert-keys` · no
+prices, no stock, no services, no bills, no patients.
+
+Sign-in was checked end to end against a running server, not assumed: the login
+page returns 200 with the letterhead on it, the right password returns a session
+for Shreekrishna with role `admin`, `/dashboard` opens with it and redirects to
+`/login` without it, and a wrong password is refused with `CredentialsSignin`.
 
 **Left, and all of it needs the clinic in the room:**
 
 | | What | Where |
 |---|---|---|
-| 🔴 | **Run `pnpm db:bootstrap`** — company row, fiscal year, Admin user. Nothing below can be done until this exists. Needs the real PAN; see Deploy.md | terminal |
-| 🔴 | **Replace the bootstrap admin password and PIN** at first sign-in — blocking, see §6 | Settings → Users |
-| 🔴 | Real user accounts, roles and PINs | Settings → Users |
-| 🟠 | Company address and phone; upload the letterhead image (it carries the PAN and DDA, so the bill does not print them again). The artwork is in the repo at `public/Chunidevi Health Polyclinic Pvt. Ltd. - Logo.jpeg` | Settings → Company |
-| 🟠 | Services, rates, doctors, follow-up rules | Settings → Services / Doctors |
+| 🔴 | **Replace the admin password** — it is eight repeated digits, set only to clear the length guard. Do this before the site is reachable from outside. Blocking, see §6 | Settings → Users |
+| 🔴 | Real user accounts, roles and PINs — one shared `admin` login is not an audit trail | Settings → Users |
+| 🟠 | **DDA number**, and the invoice footer text | Settings → Company |
+| 🟠 | Check the letterhead prints the way they want it — it was set from the file, not chosen on screen. Re-upload to replace | Settings → Company |
+| 🟠 | **A private Blob store.** `BLOB_READ_WRITE_TOKEN` cannot be generated locally; until Vercel issues it, patient files land on the machine's own disk and nothing is backed up | Deploy.md |
+| 🟠 | The live site needs its own `AUTH_SECRET`, `CRON_SECRET` and VAPID pair in the hosting settings — the ones generated here are for local work. **A VAPID pair must never change once phones have alerts on** (D-122) | Vercel |
+| 🟠 | **Rates for the 245 laboratory tests** — all loaded at 0, and a service with no rate cannot be billed. Their partner cost (what NOVUS charges) is 0 too, so set both together | Settings → Services |
+| 🟠 | The rest of the services — Ultrasound, X-Ray, ECG, ECHO, Skin, Procedure — and follow-up rules | Settings → Services / Doctors |
 | 🟠 | Prices for the 6,646 medicines, or let the counter set them as they sell | Items → Set prices |
 | 🟠 | Opening stock: batch numbers and expiry dates | Stock → Opening stock |
 | 🟠 | Laboratory partners | Settings → Lab partners |
 | 🟡 | Shop floor plan and racks, once the shelving is decided | Settings → Floor plan |
-| 🟡 | Connect a private Blob store, or nothing is backed up on its own | Deploy.md |
 
 **Until an item has a price it cannot be sold** — the counter refuses it and
 says why. That is deliberate: a catalogue arrives before a price list does, and
 the alternative is a real bill with Rs 0 on it.
-
-| | What | Where |
-|---|---|---|
-| 🔴 | **Connect a private Blob store.** Until then nothing is backed up on its own and patient files have nowhere safe to go — see §0 and §7 | Vercel → Storage; Deploy.md |
-| 🟢 | Run `pnpm db:migrate` on production (**0021**) — done 2083-06-08 | Deploy.md |
 
 ---
 

@@ -25,6 +25,17 @@ import { ulid } from "ulid";
 import { randomBytes, scryptSync } from "node:crypto";
 import { today, fiscalYearOf, fiscalYearAdRange, adToIso } from "../src/lib/bs";
 
+// The same loader db/migrate.ts, db/check.ts and db/import-items.ts use, so
+// they all look at the same database. Without this, bootstrap is the one script
+// that cannot see .env.local and stops at "TURSO_DATABASE_URL is not set".
+for (const f of [".env.local", ".env"]) {
+  try {
+    process.loadEnvFile(f);
+  } catch {
+    // file absent — fine
+  }
+}
+
 function arg(name: string, fallback = ""): string {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1]! : fallback;
