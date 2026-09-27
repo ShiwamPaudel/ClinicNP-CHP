@@ -298,6 +298,9 @@ export async function salesRegister(
 // ---------- purchase register ----------
 
 export interface PurchaseRegisterRow {
+  /** So the register can link to the entry itself. Not exported to the CSV,
+   *  which maps its columns by name. */
+  id: string;
   purchaseNo: string | null;
   supplierName: string;
   supplierInvoiceNo: string;
@@ -320,6 +323,7 @@ export async function purchaseRegister(
     args: [fromIso, toIso],
   });
   return res.rows.map((r) => ({
+    id: r.id as string,
     purchaseNo: (r.purchase_no as string | null) ?? null,
     supplierName: r.supplier_name as string,
     supplierInvoiceNo: (r.supplier_invoice_no as string) ?? "",

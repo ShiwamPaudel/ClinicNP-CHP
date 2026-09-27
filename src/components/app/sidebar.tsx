@@ -5,7 +5,7 @@ import { signOut } from "next-auth/react";
 import { clearCachesOnLogout } from "@/offline/catalog-cache";
 import { LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Nav } from "@/components/app/nav";
-import { Wordmark, AppMark } from "@/components/ui/wordmark";
+import { AppLogo, AppMark } from "@/components/ui/wordmark";
 import { PinSwitch, type SwitchableUser } from "@/components/app/pin-switch";
 import { strings } from "@/lib/strings";
 import { cn } from "@/lib/cn";
@@ -78,7 +78,7 @@ export function Sidebar({
         {collapsed ? (
           <AppMark name={appName} />
         ) : (
-          <Wordmark name={appName} tone="light" className="pl-1" />
+          <AppLogo name={appName} className="pl-1" />
         )}
         <button
           onClick={toggle}

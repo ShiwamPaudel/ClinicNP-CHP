@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireAdmin } from "@/lib/session";
 import { requireModulePage } from "@/lib/modules";
 import { purchaseRegister } from "@/lib/repos/reports";
@@ -46,7 +47,16 @@ export default async function PurchaseRegisterPage({
             <tbody>
               {rows.map((r, i) => (
                 <TR key={i}>
-                  <TD className="font-mono">{r.purchaseNo ?? "—"}</TD>
+                  {/* The row opens the entry it summarises — the register is
+                      where somebody notices a figure they want to look into. */}
+                  <TD className="font-mono">
+                    <Link
+                      href={`/purchases/${r.id}`}
+                      className="text-sage-900 underline-offset-2 hover:underline"
+                    >
+                      {r.purchaseNo ?? "View"}
+                    </Link>
+                  </TD>
                   <TD>{r.supplierName}</TD>
                   <TD>{r.supplierInvoiceNo || "—"}</TD>
                   <TD>{r.dateBs}</TD>

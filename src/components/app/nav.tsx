@@ -41,12 +41,20 @@ interface NavGroup {
   /** null = ungrouped, always shown. */
   module: "clinic" | "pharmacy" | null;
   label?: string;
+  /**
+   * How many tiles sit side by side when the menu is open. Two is the default
+   * and what the sidebar is laid out for; the first block stays at one because
+   * Dashboard and New bill are the two things reached most often and a
+   * full-width row is a bigger target than half of one.
+   */
+  columns?: 1 | 2;
   items: NavItem[];
 }
 
 const GROUPS: NavGroup[] = [
   {
     module: null,
+    columns: 1,
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
       { href: "/billing", label: "New bill", icon: Receipt },
@@ -112,8 +120,18 @@ export function Nav({
 
   return (
     <nav className="flex flex-col gap-1">
-      {visible.map((group, gi) => (
+      {visible.map((group, gi) => {
+        // Collapsed is icons only at 68px wide, where a second column would
+        // leave nothing to hit.
+        const twoUp = !collapsed && (group.columns ?? 2) === 2;
+        return (
         <div key={group.module ?? `plain-${gi}`} className="flex flex-col gap-1">
+          {/* An unlabelled block after a labelled one needs a line of its own,
+              or Bills and Dues read as though they belong to Pharmacy. The
+              first block needs none — nothing is above it. */}
+          {group.module === null && gi > 0 && (
+            <div className="my-2 border-t border-cream-50/15" />
+          )}
           {group.module !== null &&
             showLabels &&
             (collapsed ? (
@@ -131,30 +149,55 @@ export function Nav({
               </div>
             ))}
 
-          {group.items.map((item) => {
-            const active =
-              pathname === item.href || pathname.startsWith(item.href + "/");
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                title={collapsed ? item.label : undefined}
-                className={cn(
-                  "flex items-center gap-3 rounded-[8px] py-2 text-[14px] transition-colors",
-                  collapsed ? "justify-center px-2" : "px-3",
-                  active
-                    ? "bg-sage-700 text-cream-50"
-                    : "text-cream-50/70 hover:bg-sage-700/40 hover:text-cream-50",
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
-                {!collapsed && item.label}
-              </Link>
-            );
-          })}
+          <div
+            className={cn(
+              "grid gap-1",
+              twoUp ? "grid-cols-2" : "grid-cols-1",
+            )}
+          >
+            {group.items.map((item, ii) => {
+              const active =
+                pathname === item.href || pathname.startsWith(item.href + "/");
+              const Icon = item.icon;
+              // An odd one left at the end takes the whole row rather than
+              // sitting in a half-empty one — which is also what gives
+              // "Laboratory" the width its name needs.
+              const spans =
+                twoUp &&
+                group.items.length % 2 === 1 &&
+                ii === group.items.length - 1;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  // In two columns a long name can run out of room, so it is
+                  // clipped rather than allowed to wrap the tile to two lines.
+                  // The title puts the whole name back within reach.
+                  title={collapsed || twoUp ? item.label : undefined}
+                  className={cn(
+                    "flex items-center rounded-[8px] py-2 transition-colors",
+                    collapsed
+                      ? "justify-center gap-3 px-2 text-[14px]"
+                      : twoUp
+                        ? "gap-1.5 px-2 text-[13px]"
+                        : "gap-3 px-3 text-[14px]",
+                    spans && "col-span-2",
+                    active
+                      ? "bg-sage-700 text-cream-50"
+                      : "text-cream-50/70 hover:bg-sage-700/40 hover:text-cream-50",
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+                  {!collapsed && (
+                    <span className="min-w-0 truncate">{item.label}</span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
         </div>
-      ))}
+        );
+      })}
     </nav>
   );
 }

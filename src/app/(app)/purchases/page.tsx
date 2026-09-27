@@ -58,7 +58,14 @@ export default async function PurchasesPage() {
           <tbody>
             {purchases.map((p) => (
               <TR key={p.id}>
-                <TD className="font-mono">{p.purchaseNo ?? "—"}</TD>
+                <TD className="font-mono">
+                  <Link
+                    href={`/purchases/${p.id}`}
+                    className="text-sage-900 underline-offset-2 hover:underline"
+                  >
+                    {p.purchaseNo ?? "View"}
+                  </Link>
+                </TD>
                 <TD className="font-medium text-sage-900">{p.supplierName}</TD>
                 <TD>{p.supplierInvoiceNo || "—"}</TD>
                 <TD>{p.dateBs}</TD>

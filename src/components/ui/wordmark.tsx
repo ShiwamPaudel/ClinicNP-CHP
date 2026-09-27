@@ -68,3 +68,39 @@ export function AppMark({
     </span>
   );
 }
+
+/**
+ * The ClinicNP logo as artwork, for the sidebar's dark panel.
+ *
+ * The typeset `Wordmark` above still exists and is still the fallback, because
+ * the product name follows the enabled modules (D-025) and a raster cannot: a
+ * pharmacy-only install calls itself Faarma, and showing it a ClinicNP logo
+ * would be worse than showing it type. So this is used only when the derived
+ * name really is ClinicNP, which is every install with the clinic module on.
+ *
+ * The file is `logo-white-trim.png` rather than `logo-white.png` — the same
+ * artwork with its transparent margin cropped off, so the height here is the
+ * height of the mark instead of a third of it being empty.
+ */
+export function AppLogo({
+  name,
+  className,
+}: {
+  name: string;
+  className?: string;
+}) {
+  if (name !== CLINIC_APP_NAME) {
+    return <Wordmark name={name} tone="light" className={className} />;
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/icons/logo-white-trim.png"
+      alt={name}
+      width={1316}
+      height={360}
+      className={cn("h-auto w-[142px] select-none", className)}
+      draggable={false}
+    />
+  );
+}

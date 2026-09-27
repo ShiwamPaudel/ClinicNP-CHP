@@ -283,10 +283,6 @@ export function PurchaseForm({
                 Reload the item list
               </button>
             )}
-            <Button variant="secondary" onClick={() => setLines((l) => [...l, blankLine()])}>
-              <Plus className="h-4 w-4" />
-              Add line
-            </Button>
           </div>
         </div>
 
@@ -440,6 +436,19 @@ export function PurchaseForm({
               </div>
             );
           })}
+        </div>
+
+        {/* Under the lines rather than up in the heading: the last box on a
+            line is the cost, and the next thing to do after typing it is start
+            another line. The button is where the hand already is. */}
+        <div className="mt-3">
+          <Button
+            variant="secondary"
+            onClick={() => setLines((l) => [...l, blankLine()])}
+          >
+            <Plus className="h-4 w-4" />
+            Add line
+          </Button>
         </div>
       </section>
 

@@ -290,3 +290,123 @@ export async function createPurchaseReturn(
 
   return returnId;
 }
+
+// ---------- one purchase, for reading back ----------
+
+export interface PurchaseDetailLine {
+  itemId: string;
+  brandName: string;
+  genericName: string;
+  unitName: string;
+  unitLevel: number;
+  batchNo: string;
+  expiryDateAd: string;
+  qty: number;
+  freeQty: number;
+  costPaisa: number;
+  discountPaisa: number;
+  /** qty x cost, less this line's discount — what the line adds to the bill. */
+  lineTotalPaisa: number;
+  /** Of what this line brought in, how much is still on the shelf. */
+  remainingBaseQty: number;
+  receivedBaseQty: number;
+}
+
+export interface PurchaseDetail {
+  id: string;
+  purchaseNo: string | null;
+  supplierId: string;
+  supplierName: string;
+  supplierInvoiceNo: string;
+  dateBs: string;
+  dateAd: string;
+  subtotalPaisa: number;
+  discountPaisa: number;
+  billDiscountPaisa: number;
+  roundingPaisa: number;
+  vatPaisa: number;
+  totalPaisa: number;
+  enteredBy: string | null;
+  createdAt: string;
+  lines: PurchaseDetailLine[];
+}
+
+/**
+ * One purchase with its lines, for reading back what was entered.
+ *
+ * The unit name is read from `item_units` by the level stored on the line, so
+ * a line entered in boxes reads as boxes rather than as the base quantity it
+ * became. The batch's remaining quantity comes along because "what did we buy"
+ * and "how much of it is left" are the same question asked twice, and the
+ * person looking at a purchase is usually about to ask the second one.
+ *
+ * Read-only by design: a purchase has already raised stock through
+ * `stock_moves`, and some of it may be sold. A correction is a purchase
+ * return, not an edit.
+ */
+export async function getPurchase(id: string): Promise<PurchaseDetail | null> {
+  const head = await db().execute({
+    sql: `SELECT p.*, s.name AS supplier_name, u.name AS user_name
+          FROM purchases p
+          JOIN suppliers s ON s.id = p.supplier_id
+          LEFT JOIN users u ON u.id = p.user_id
+          WHERE p.id = ?`,
+    args: [id],
+  });
+  if (head.rows.length === 0) return null;
+  const r = head.rows[0]! as Row;
+
+  const lines = await db().execute({
+    sql: `SELECT pl.*, i.brand_name, i.generic_name,
+                 b.batch_no, b.expiry_date_ad,
+                 b.remaining_base_qty, b.received_base_qty,
+                 iu.name AS unit_name
+          FROM purchase_lines pl
+          JOIN items i ON i.id = pl.item_id
+          JOIN batches b ON b.id = pl.batch_id
+          LEFT JOIN item_units iu
+                 ON iu.item_id = pl.item_id AND iu.level = pl.unit_level
+          WHERE pl.purchase_id = ?
+          ORDER BY rowid ASC`,
+    args: [id],
+  });
+
+  return {
+    id: r.id as string,
+    purchaseNo: (r.purchase_no as string | null) ?? null,
+    supplierId: r.supplier_id as string,
+    supplierName: r.supplier_name as string,
+    supplierInvoiceNo: (r.supplier_invoice_no as string) ?? "",
+    dateBs: r.date_bs as string,
+    dateAd: r.date_ad as string,
+    subtotalPaisa: Number(r.subtotal_paisa),
+    discountPaisa: Number(r.discount_paisa),
+    billDiscountPaisa: Number(r.bill_discount_paisa ?? 0),
+    roundingPaisa: Number(r.rounding_paisa ?? 0),
+    vatPaisa: Number(r.vat_paisa),
+    totalPaisa: Number(r.total_paisa),
+    enteredBy: (r.user_name as string | null) ?? null,
+    createdAt: r.created_at as string,
+    lines: lines.rows.map((l: Row) => {
+      const qty = Number(l.qty);
+      const cost = Number(l.cost_paisa);
+      const discount = Number(l.discount_paisa);
+      return {
+        itemId: l.item_id as string,
+        brandName: l.brand_name as string,
+        genericName: (l.generic_name as string) ?? "",
+        unitName: (l.unit_name as string | null) ?? "",
+        unitLevel: Number(l.unit_level),
+        batchNo: l.batch_no as string,
+        expiryDateAd: l.expiry_date_ad as string,
+        qty,
+        freeQty: Number(l.free_qty),
+        costPaisa: cost,
+        discountPaisa: discount,
+        lineTotalPaisa: qty * cost - discount,
+        remainingBaseQty: Number(l.remaining_base_qty),
+        receivedBaseQty: Number(l.received_base_qty),
+      };
+    }),
+  };
+}

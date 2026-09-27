@@ -1,0 +1,195 @@
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { ArrowLeft, ShoppingCart } from "lucide-react";
+import { requireAdmin } from "@/lib/session";
+import { requireModulePage } from "@/lib/modules";
+import { getPurchase } from "@/lib/repos/purchases";
+import { formatPaisa } from "@/lib/money";
+import { expiryForPrint } from "@/lib/print-batches";
+import { PageShell } from "@/components/app/page-shell";
+import { Table, THead, TR, TH, TD } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+
+/**
+ * One purchase, read back.
+ *
+ * Read-only on purpose. The purchase has already created batches and raised
+ * stock through `stock_moves`, and some of it may be sold by now — so a
+ * correction is a purchase return, not an edit of what was typed. There is no
+ * Edit button here and there is not meant to be one.
+ *
+ * The totals block repeats the supplier's own order — lines, their discounts,
+ * the discount on the whole bill, VAT, rounding — so this page can be read
+ * against the paper it was copied from, line by line, which is the reason
+ * somebody opens it (D-143).
+ */
+export default async function PurchaseDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  await requireAdmin();
+  await requireModulePage("pharmacy");
+
+  const { id } = await params;
+  const p = await getPurchase(id);
+  if (!p) notFound();
+
+  const title = p.purchaseNo ? `Purchase ${p.purchaseNo}` : "Purchase";
+
+  return (
+    <PageShell
+      title={title}
+      actions={
+        <Link href="/purchases">
+          <Button variant="secondary">
+            <ArrowLeft className="h-4 w-4" />
+            All purchases
+          </Button>
+        </Link>
+      }
+    >
+      <section className="mb-4 rounded-[10px] border border-line bg-cream-50 p-4">
+        <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Fact label="Supplier">
+            <Link
+              href={`/suppliers/${p.supplierId}`}
+              className="font-medium text-sage-900 underline-offset-2 hover:underline"
+            >
+              {p.supplierName}
+            </Link>
+          </Fact>
+          <Fact label="Their invoice no.">
+            {p.supplierInvoiceNo || "—"}
+          </Fact>
+          <Fact label="Date">{p.dateBs}</Fact>
+          <Fact label="Entered by">{p.enteredBy ?? "—"}</Fact>
+        </dl>
+      </section>
+
+      <Table>
+        <THead>
+          <TR>
+            <TH>Item</TH>
+            <TH>Batch no.</TH>
+            <TH>Expiry</TH>
+            <TH>Unit</TH>
+            <TH numeric>Qty</TH>
+            <TH numeric>Free</TH>
+            <TH numeric>Cost/unit</TH>
+            <TH numeric>Discount</TH>
+            <TH numeric>Amount</TH>
+            <TH numeric>Left</TH>
+          </TR>
+        </THead>
+        <tbody>
+          {p.lines.map((l, i) => (
+            <TR key={i}>
+              <TD>
+                <div className="font-medium text-sage-900">{l.brandName}</div>
+                {l.genericName && (
+                  <div className="text-[12px] text-sage-500">
+                    {l.genericName}
+                  </div>
+                )}
+              </TD>
+              <TD className="font-mono">{l.batchNo}</TD>
+              <TD className="font-mono">{expiryForPrint(l.expiryDateAd)}</TD>
+              <TD>{l.unitName || "—"}</TD>
+              <TD numeric>{l.qty}</TD>
+              <TD numeric>{l.freeQty > 0 ? l.freeQty : "—"}</TD>
+              <TD numeric>{formatPaisa(l.costPaisa, false)}</TD>
+              <TD numeric>
+                {l.discountPaisa > 0
+                  ? formatPaisa(l.discountPaisa, false)
+                  : "—"}
+              </TD>
+              <TD numeric>{formatPaisa(l.lineTotalPaisa, false)}</TD>
+              {/* What this batch brought in and what is still on the shelf.
+                  In base units, because that is what stock is counted in. */}
+              <TD numeric>
+                <span
+                  className={
+                    l.remainingBaseQty === 0 ? "text-sage-400" : undefined
+                  }
+                >
+                  {l.remainingBaseQty} / {l.receivedBaseQty}
+                </span>
+              </TD>
+            </TR>
+          ))}
+        </tbody>
+      </Table>
+
+      <section className="mt-4 flex flex-col items-end gap-1.5 rounded-[10px] border border-line bg-cream-50 p-6">
+        <Row label="Subtotal" value={formatPaisa(p.subtotalPaisa, false)} />
+        {p.discountPaisa > 0 && (
+          <Row
+            label="Line discounts"
+            value={`- ${formatPaisa(p.discountPaisa, false)}`}
+          />
+        )}
+        {p.billDiscountPaisa > 0 && (
+          <Row
+            label="Discount on the bill"
+            value={`- ${formatPaisa(p.billDiscountPaisa, false)}`}
+          />
+        )}
+        {p.vatPaisa > 0 && (
+          <Row label="VAT (13%)" value={formatPaisa(p.vatPaisa, false)} />
+        )}
+        {/* May be up or down; formatPaisa carries the minus sign itself. */}
+        {p.roundingPaisa !== 0 && (
+          <Row label="Rounding" value={formatPaisa(p.roundingPaisa, false)} />
+        )}
+        <div className="mt-1.5 flex w-full max-w-[320px] items-center justify-between border-t border-line pt-2.5">
+          <span className="text-[15px] font-semibold text-sage-900">
+            Net total
+          </span>
+          <span className="text-[15px] font-semibold text-sage-900">
+            {formatPaisa(p.totalPaisa)}
+          </span>
+        </div>
+      </section>
+
+      <p className="mt-4 flex items-center gap-1.5 text-[12.5px] text-sage-500">
+        <ShoppingCart className="h-3.5 w-3.5 shrink-0" />
+        A saved purchase is not edited — it has already raised stock. Correct
+        one with a{" "}
+        <Link
+          href="/purchases/returns"
+          className="underline underline-offset-2 hover:text-sage-900"
+        >
+          purchase return
+        </Link>
+        .
+      </p>
+    </PageShell>
+  );
+}
+
+function Fact({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <dt className="text-[12px] uppercase tracking-wide text-sage-500">
+        {label}
+      </dt>
+      <dd className="mt-0.5 text-[14px] text-sage-900">{children}</dd>
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex w-full max-w-[320px] items-center justify-between">
+      <span className="text-[14px] text-sage-700">{label}</span>
+      <span className="text-[14px] tabular-nums text-sage-900">{value}</span>
+    </div>
+  );
+}
