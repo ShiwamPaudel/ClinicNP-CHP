@@ -88,31 +88,45 @@ Scale (rem): `12 / 13 / 14 (base) / 16 / 18 / 22 / 28 / 40`. Base UI 14 px; coun
 
 Unchanged: 4 px spacing base (`4, 8, 12, 16, 24, 32, 48`); radius 10 px cards, 8 px inputs, 999 px chips; one shadow level; 232 px fixed sidebar; 1240 px content max-width.
 
-**Sidebar, with both modules on** — grouped, not merged, so nobody hunts:
+**Sidebar, with both modules on** — grouped, not merged, so nobody hunts, and
+**two tiles to a row** inside each group so the whole menu is reachable without
+scrolling at 232 px:
 
 ```
-  [ClinicNP mark]
-  Dashboard
-  Counter                      ← the billing screen
+  [ClinicNP logo]              ← artwork, not type (see below)
+  Dashboard                    ← first block stays one per row:
+  New bill                       the two most-used destinations
 
   CLINIC          (navy group label)
-    Today
-    Patients
-    Visits
-    Files pending
+    Today       │ Patients
+    Visits      │ Doctors
+    Laboratory                 ← odd one out takes the whole row
 
   PHARMACY        (sage group label)
-    Stock
-    Items
-    Purchases
-    Suppliers
-
-  Bills
-  Dues                         ← who owes what (both modules, 0019)
-  Reports
-  Settings
+    Stock       │ Items
+    Purchases   │ Suppliers
+  ─────────────────────────    ← divider: what follows is neither module's
+    Bills       │ Dues           (dues cover medicine and services, 0019)
+    Reports     │ Settings      (Settings is admin-only; staff see Reports
+                                 alone on its row)
 ```
-With one module on, the group labels disappear and the items sit flat — a pharmacy-only install looks exactly like Faarma v1. Collapsed (icon-only) mode from v1 is retained; group labels become a 1 px divider.
+Two columns rather than a scrolling menu: the list is short enough to fit if it
+is laid out, and a menu that has to be scrolled hides half of itself. The tile
+drops to 13 px with a tighter gap to earn the width, a name too long to fit is
+clipped with its full text on the `title`, and a group with an odd number of
+items gives the last one the full row — which is also what lets "Laboratory"
+show its whole name. The nav region still scrolls if it ever has to.
+
+The mark is the real **ClinicNP logo** (`/icons/logo-white-trim.png`, the white
+artwork with its transparent margin cropped so its height is all mark). The
+typeset wordmark stays as the fallback and is still what a pharmacy-only
+install shows, because the product name follows the enabled modules (D-025) and
+a raster cannot: Faarma must not be handed a ClinicNP logo.
+
+With one module on, the group labels disappear and the items sit flat — a
+pharmacy-only install looks exactly like Faarma v1. Collapsed (icon-only) mode
+from v1 is retained: it returns to **one icon per row**, since a second column
+at 68 px leaves nothing to hit, and group labels become a 1 px divider.
 
 **The counter (`/billing`)** keeps its own layout — no sidebar, three zones — with one addition:
 

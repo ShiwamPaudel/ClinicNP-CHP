@@ -903,3 +903,66 @@ it. The wordmark stays at the top and the name and Sign out stay at the bottom,
 which is what somebody reaches for on a shared counter machine. Checked at
 1600x560: scrollable, reaches the bottom, footer still visible — and at
 1600x900 it does **not** scroll, so no scrollbar appears where none is needed.
+
+### C-027  ·  2083-06-13  ·  Two tiles to a row, the real logo, and a purchase you can read back
+
+**The sidebar is two columns instead of a scroll.** C-026 made the menu
+scrollable, which solved the symptom: on a short screen the lower half was
+unreachable. The better answer is that the list is short enough to fit if it is
+laid out — so each group now runs two tiles to a row and nothing needs
+scrolling at all. The scroll region stays as the safety net.
+
+Three details earn it: the first block (Dashboard, New bill) stays one per row,
+because those are the two most-used destinations and a full-width row is the
+bigger target; a group with an odd number of items gives the last one the whole
+row, which is what lets **Laboratory** show its full name rather than clipping;
+and the tile drops to 13 px with a tighter icon gap to buy the width.
+Measured after, not assumed — **no label in the menu is clipped** at any role.
+Collapsed mode returns to one icon per row, since a second column at 68 px
+leaves nothing to hit.
+
+**Bills and Dues were reading as part of Pharmacy.** In one column the blocks
+were far enough apart to tell; packed two-up they merged, and the first
+screenshot showed Bills sitting under the PHARMACY heading as though it belonged
+there. An unlabelled block that follows a labelled one now gets a divider.
+
+**The mark is the real logo.** `logo-white.png` is 1500x800 with the artwork
+filling 88% x 45% of it, so used as-is a third of the header would have been
+empty transparency. Cropped to its own bounds once
+(1316x360) and saved beside the original as `logo-white-trim.png` — the
+original is untouched. `AppLogo` falls back to the typeset `Wordmark` when the
+derived name is not ClinicNP, because the name follows the enabled modules
+(D-025) and a raster cannot: a pharmacy-only install calls itself Faarma and
+must not be shown a ClinicNP logo.
+
+**A purchase can now be read back — there was no such screen at all.** Neither
+the register nor the Purchases list linked anywhere, and no `/purchases/[id]`
+route existed, so this was a page to build rather than a link to add.
+`getPurchase()` joins the lines to items, batches and `item_units`, so a line
+entered in boxes reads as boxes rather than as the base quantity it became, and
+carries the batch's remaining-of-received alongside — "what did we buy" and
+"how much is left" are the same question asked twice. The totals repeat the
+supplier's own order (lines, line discounts, bill discount, VAT, rounding) so
+the screen can be read against the paper it was copied from (D-143).
+
+**Read-only, and deliberately so.** A saved purchase has already created
+batches and raised stock through `stock_moves`, some of which may be sold. There
+is no Edit button and the page says why: a correction is a purchase return.
+
+Linked from the register **and** the Purchases list, since both show the same
+rows and only one being clickable would be the odd thing. `PurchaseRegisterRow`
+gained an `id`; the CSV export maps its columns by name, so its output is
+byte-for-byte what it was.
+
+**Caught by looking rather than by trusting a 200.** The first check reported
+the detail page "loaded" — it had, as a Next.js error overlay. `ORDER BY rowid`
+is ambiguous across three joined tables and SQLite refused it. Fixed to
+`pl.rowid`, and the re-check now asserts the page has line rows and a net total
+instead of merely responding. Both real purchases render.
+
+**Add line moved under the lines** on purchase entry, out of the section
+heading: the last box on a line is the cost, and the next thing somebody does
+after typing it is start another line.
+
+512 tests pass across 43 files; typecheck clean. Nothing in the database was
+touched this session.

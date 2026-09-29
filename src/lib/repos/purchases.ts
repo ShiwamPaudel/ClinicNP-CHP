@@ -367,7 +367,7 @@ export async function getPurchase(id: string): Promise<PurchaseDetail | null> {
           LEFT JOIN item_units iu
                  ON iu.item_id = pl.item_id AND iu.level = pl.unit_level
           WHERE pl.purchase_id = ?
-          ORDER BY rowid ASC`,
+          ORDER BY pl.rowid ASC`,
     args: [id],
   });
 

@@ -23,3 +23,6 @@ backups/prod-*.json
 
 # the WebAssembly runtime for the invoice reader, copied out of node_modules
 public/ort/
+
+# scratch files from tooling runs (screenshots, one-off scripts)
+.tmp-*
