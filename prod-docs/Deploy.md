@@ -291,6 +291,22 @@ Nothing to migrate. Two things to know about the deploy:
   runtime and the OpenCV chunk — and then it is cached. Later reads are a few
   seconds. Worth knowing before somebody tries it on a phone on mobile data.
 
+## 0022 purchase line selling rate — already applied
+
+`0022_purchase_line_selling_rate.sql` adds one column to `purchase_lines`
+(`selling_rate_paisa`, default 0): the selling price set on a purchase line,
+kept as a record. Nothing is rebuilt, and the code deployed before it keeps
+working with the column in place, which is why it could go first.
+
+**Applied to production on 2083-06-14** (C-028), after a copy of the purchase
+tables was written to `backups/prod-before-0022-purchases-*.json` (gitignored):
+1 statement, row counts identical before and after across `purchases`,
+`purchase_lines`, `batches` and `item_units`, and every existing line reads 0.
+So deploying the code that uses it is only:
+
+    pnpm db:check            # "schema is up to date (22 migrations)"
+    git push                 # Vercel builds; db:check lets it through
+
 ## 0021 purchase bill discount — migrate, then deploy
 
 `0021_purchase_bill_discount.sql` adds two columns to `purchases`

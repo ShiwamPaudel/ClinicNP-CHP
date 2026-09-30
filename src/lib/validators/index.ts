@@ -111,6 +111,12 @@ export const purchaseLineSchema = z
     freeQty: z.number().int().min(0),
     unitCostPaisa: z.number().int().min(0),
     discountPaisa: z.number().int().min(0),
+    // The selling price typed on the line, for its unit (0022). Defaults to 0,
+    // "none given", so anything that does not send it saves exactly as before.
+    sellingRatePaisa: z.number().int().min(0).default(0),
+    // Only when editing a saved purchase: which existing line this row is.
+    // A new purchase never sends it, and it is ignored if one does.
+    lineId: z.string().min(1).optional(),
   })
   // Both are zero-padded BS text, so comparing the strings compares the dates.
   .refine((l) => !l.mfgDateBs || l.mfgDateBs <= l.expiryDateBs, {
@@ -134,6 +140,12 @@ export const purchaseSchema = z.object({
   lines: z.array(purchaseLineSchema).min(1, "Add at least one item"),
 });
 export type PurchaseFormInput = z.infer<typeof purchaseSchema>;
+
+/** Changing a saved purchase: the same fields, plus which one and the password. */
+export const purchaseUpdateSchema = purchaseSchema.extend({
+  purchaseId: z.string().min(1),
+  password: z.string().min(1, "Enter your password to save the change"),
+});
 
 export const purchaseReturnSchema = z.object({
   supplierId: z.string().min(1),

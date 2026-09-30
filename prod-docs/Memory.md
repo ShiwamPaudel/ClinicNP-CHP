@@ -23,7 +23,7 @@
 
 *Last rewritten 2083-05-26 (C-014); production figures re-read 2083-06-06 (C-016). Everything below is verified against production, not remembered.*
 
-> **This install's database is new and open for business.** Checked 2083-06-09 against `clinicnpforchp-clinicnpforchp.aws-ap-south-1.turso.io`: **21 migrations** applied (ends at `0021_purchase_bill_discount.sql`), company row set with PAN and both modules on, fiscal year **2083/84 open**, one admin user, the clinic's **letterhead set**, and **6,646 items and 14,187 units**. Sign-in verified end to end against a running server. **The clinic is now trading** (2083-06-10: 2 bills, 2 patients, 2 purchases, 4 batches), has entered its own doctors, groups, one laboratory partner and its OPD/USG services, and carries **245 laboratory tests at rate 0**. Prices, opening stock and the rest of the services are still the clinic's to enter. **Still the owner's:** 🔴 the admin account was bootstrapped with a deliberately weak password — eight repeated digits, chosen only to clear the length guard — and it must be replaced before the clinic is reachable from outside. (Rule 7: the value is not written here.) Then connect a private Blob store (Deploy.md, "The storage has to be a private store"); until a *Nightly* row with *Download* appears, nothing is backed up on its own.
+> **This install's database is new and open for business.** Checked 2083-06-09 against `clinicnpforchp-clinicnpforchp.aws-ap-south-1.turso.io`: **22 migrations** applied (ends at `0022_purchase_line_selling_rate.sql`, applied 2083-06-14 in C-028), company row set with PAN and both modules on, fiscal year **2083/84 open**, one admin user, the clinic's **letterhead set**, and **6,646 items and 14,187 units**. Sign-in verified end to end against a running server. **The clinic is now trading** (2083-06-10: 2 bills, 2 patients, 2 purchases, 4 batches), has entered its own doctors, groups, one laboratory partner and its OPD/USG services, and carries **245 laboratory tests at rate 0**. Prices, opening stock and the rest of the services are still the clinic's to enter. **Still the owner's:** 🔴 the admin account was bootstrapped with a deliberately weak password — eight repeated digits, chosen only to clear the length guard — and it must be replaced before the clinic is reachable from outside. (Rule 7: the value is not written here.) Then connect a private Blob store (Deploy.md, "The storage has to be a private store"); until a *Nightly* row with *Download* appears, nothing is backed up on its own.
 >
 > The figures in the paragraph above replaced the previous install's, which had run 0021 with 16 `backups` rows. **The code is unchanged and still at the same maturity**; what reset is the data.
 
@@ -273,6 +273,9 @@
 | D-145 | **The invoice reader fills the purchase form and nothing else: it never saves, never picks the supplier, and leaves a box empty rather than guessing at it** | The owner's own description of how it should work — the photo fills the fields, the person tallies against the paper, amends, and only then records the purchase. So the reader writes to the same form the counter has always used, behind the same checks, and the Save button stays where it was. It does not touch the supplier: a name on a bill is not a supplier record, and the wrong one puts money on the wrong ledger. It fills no medicine it is not sure of, because a wrong medicine on a purchase is wrong stock, and it flags what it is unsure of instead — a row whose arithmetic does not close, a name it could not find, and the bill's own net total against what the lines come to |
 | D-146 | **The model, the WebAssembly runtime and OpenCV are served by this app, not by a CDN** | The clinic's line is not reliable, and the moment somebody presses "Fill from a photo" is the worst moment to be waiting on somebody else's server — or to discover it is blocked. The model (~6 MB) is committed under `public/ocr/`; the runtime is copied out of node_modules into `public/ort/` at install and build time, so a 14 MB binary is not carried in git. `onnxruntime-web` is aliased to its wasm-only build, which avoids serving a 28 MB WebGPU runtime the reader never asks for |
 | D-147 | **A photographed page is straightened before it is read** | Measured, not assumed: the same invoice photographed flat gave back all 12 of its rows and photographed at an angle gave back 1. OpenCV finds the sheet of paper and warps its corners square first. It costs a 13 MB lazy chunk, fetched once and cached, which is the price of the feature working on a photo taken by hand rather than on a scan |
+| D-148 | **A saved purchase can be edited, behind the signed-in admin's password, guarded by the stock it already put on the shelf** (C-028) — reverses C-027's read-only stance at the owner's request | Quantity may rise freely and fall only to what has already left the shelf; a line whose batch has moved (sold, returned, counted) keeps its item and cannot be removed; the date stays in the purchase's fiscal year and a closed year cannot be edited. Stock corrections are *appended* as `adjustment` moves pointing back at the purchase — never written over the original `purchase` move — and a removed line's batch is emptied and kept. The whole change and an audit entry with before and after commit together. The password is checked at the moment of the write, not when the screen opens, so there is no unlocked state to leave on a shared machine; wrong attempts are throttled on their own bucket so they cannot lock anybody out of signing in |
+| D-149 | **The selling price is typed on the purchase row and updates the item's price for that unit; a copy is kept on the line** (`0022`) | `item_units.selling_rate_paisa` stays the one place a price lives — every batch of an item sells at one price. The line copy is only a record, so a purchase can say later what price was set on it. On an edit, the item's price is updated only where the line's price was changed *in that edit*: re-saving an old purchase for an unrelated fix must not put its recorded price back onto an item whose price has moved on since |
+| D-150 | **A typed date's year decides its calendar: 2060 and up is Nepali, below is English** | People copy these dates off paper, and a pack prints English while a Nepali bill prints Nepali. Reading typed text in the shop's one setting got both wrong in turn — on a Nepali-set shop `2028-01-31` off a pack was saved as 14 May 1971; on an English-set one `2083-06-13` off a bill was refused. BS runs ~57 years ahead, so no real purchase or expiry date falls on the wrong side of 2060 (AD 2060 is further out than any expiry; BS 2059 is AD 2002). The setting still decides how dates are shown |
 
 *(Add D-036+ as they happen. Assumptions use the `ASSUMPTION:` prefix.)*
 
@@ -966,3 +969,77 @@ after typing it is start another line.
 
 512 tests pass across 43 files; typecheck clean. Nothing in the database was
 touched this session.
+
+### C-028  ·  2083-06-14  ·  A selling price on the purchase row, dates that type themselves, and a purchase that can be corrected
+
+**Live when this started:** 4 purchases, 9 lines, 2 purchase returns against
+them, 3 bills — so everything here was built to respect stock that has already
+moved, and **nothing was tested against production**. The browser runs used a
+throwaway local database built from the migrations and deleted afterwards; the
+dev server was pointed at it by environment override, and that override was
+proved to win over `.env.local` before anything ran. Production was then
+compared against the pre-migration backup: same row counts, no item price
+changed, no audit or throttle rows written.
+
+**Selling price on the row (0022, D-149).** A *Sell price* box after Cost/unit,
+filled with the item's current price for the line's unit and refilled when the
+unit changes. A price lives on `item_units`, per item and unit, never on a
+batch; saving writes it there the same way Items → Set prices does, bumping
+`items.updated_at` only when the price really changed, so counters refetch
+their catalogue only when there is something new. `purchase_lines.
+selling_rate_paisa` keeps the record. The one subtle rule is on edit: the
+item's price moves only where the line's price was changed in *that* edit —
+otherwise re-saving an old purchase would quietly undo a price set since.
+`0022` was applied to production after a backup of the purchase tables; it is
+additive, so the code already deployed kept working with it in place.
+
+**Dates that type themselves.** `maskTypedDate` puts the dashes in as digits
+arrive — `20250230` → `2025-02-30` — handles backspace without fighting it,
+still accepts `/` `-` `.` out of habit, and pads a one-digit month or day when
+a separator closes it. It only arranges characters; whether that is a real day
+is still `parseTypedDate`'s call, so 30 February is shaped and then refused.
+Turned on for the invoice date as well as each expiry.
+
+**Found while checking it, and fixed (D-150).** The owner's own examples were
+English years. The live shop is set to English, so those worked — but I
+measured every combination instead of assuming, and the design was wrong both
+ways: on a Nepali-set shop `2028-01-31` off a pack saved as **14 May 1971** and
+the owner's `20250230` as **12 June 1968**, silently; on an English-set shop a
+Nepali bill's `2083-06-13` was refused. Typed dates now take their calendar
+from the year (2060 and up Nepali, below English), which no real date can fall
+the wrong side of. Checked in the browser under both settings.
+
+**A purchase can be edited (D-148)** — reversing C-027, where I had called it
+read-only by design; the owner asked for it with an admin password, and the
+design below is what makes it safe rather than merely possible.
+`updatePurchase` runs in one write transaction. Quantity may rise, or fall to
+what has already left the shelf and no lower; a line whose batch anything else
+has touched keeps its item and cannot be removed ("touched" = any stock move on
+the batch not referencing this purchase); the date stays in its fiscal year and
+a closed year refuses. Corrections are appended to the ledger as `adjustment`
+moves referencing the purchase — no new reason, so no rebuild of
+`stock_moves`' CHECK — and each guarded `UPDATE` re-checks the shelf inside the
+transaction so a counter sale made mid-edit cannot be undercut. A removed line
+leaves its batch emptied and kept, with its history true. Header totals are
+re-derived exactly as on create (the line/VAT logic was pulled into one
+`resolveLines` shared by both actions, moved not changed). The supplier's
+ledger needed nothing: it is already derived from `purchases.total_paisa`.
+
+The password is the **signed-in admin's own**, checked at the moment of the
+write, throttled like sign-in but on a separate `purchase-edit:<id>` bucket.
+Every edit writes a `purchase_edit` audit entry with before and after; the
+purchase page shows *Last changed by … on …* in Nepal time (the server is UTC,
+so formatting with its clock would put an evening edit on the wrong day).
+
+**Tests.** 14 integration tests in `purchase-edit.integration.test.ts`, every
+refusal followed by a check that the database is byte-for-byte unchanged. A
+mutation check proved they bite: disabling the stock guards failed exactly the
+two tests that cover them. Ten new date tests replay input one keystroke at a
+time. 32 end-to-end browser checks passed on the local database, plus four
+calendar checks under both settings. **536 tests across 44 files**, typecheck
+clean. Also proved: an expiry's BS → AD → BS round trip is lossless for every
+day of BS 2080–2090 in UTC, Kathmandu and Los Angeles.
+
+**Left as it was, on purpose:** the manufacture date is not on the purchase
+form, so an edit leaves each batch's `mfg_date_ad` untouched rather than
+clearing it.

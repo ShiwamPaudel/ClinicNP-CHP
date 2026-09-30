@@ -11,6 +11,7 @@ import {
 import {
   canStep,
   formatInCalendar,
+  maskTypedDate,
   monthGrid,
   numericInCalendar,
   parseBsValue,
@@ -127,15 +128,19 @@ export function DatePickerBS({
     setOpen(false);
   }
 
-  /** Typing is read in the shop's own calendar — the one on screen, and the
-   *  one printed on the pack — not in whichever grid the popup is showing. */
-  function commitTyped(raw: string) {
+  /** A typed date says which calendar it is in by its year ("2028-…" English,
+   *  "2083-…" Nepali), so the pack and the Nepali bill both type in as
+   *  printed. The shop's setting only decides how the result is shown. */
+  function commitTyped(input: string) {
+    // Dashes are put in as the digits arrive, so "20830609" needs no `-` or
+    // `/` from the person typing it.
+    const raw = maskTypedDate(input, text);
     setText(raw);
     if (raw.trim() === "") {
       if (clearable && selected) onChange("");
       return;
     }
-    const bsText = parseTypedDate(raw, shopCalendar);
+    const bsText = parseTypedDate(raw);
     if (bsText) onChange(bsText);
   }
 

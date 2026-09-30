@@ -1,11 +1,12 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ShoppingCart } from "lucide-react";
+import { ArrowLeft, Pencil, History } from "lucide-react";
 import { requireAdmin } from "@/lib/session";
 import { requireModulePage } from "@/lib/modules";
 import { getPurchase } from "@/lib/repos/purchases";
 import { formatPaisa } from "@/lib/money";
 import { expiryForPrint } from "@/lib/print-batches";
+import { adFromIso, formatBS, toBS } from "@/lib/bs";
 import { PageShell } from "@/components/app/page-shell";
 import { Table, THead, TR, TH, TD } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -13,10 +14,10 @@ import { Button } from "@/components/ui/button";
 /**
  * One purchase, read back.
  *
- * Read-only on purpose. The purchase has already created batches and raised
- * stock through `stock_moves`, and some of it may be sold by now — so a
- * correction is a purchase return, not an edit of what was typed. There is no
- * Edit button here and there is not meant to be one.
+ * Changing it is a separate screen behind the admin's password
+ * (`/purchases/[id]/edit`), because a purchase has already created batches and
+ * raised stock, and an edit has to respect whatever of that has since moved.
+ * This page only reads.
  *
  * The totals block repeats the supplier's own order — lines, their discounts,
  * the discount on the whole bill, VAT, rounding — so this page can be read
@@ -41,12 +42,20 @@ export default async function PurchaseDetailPage({
     <PageShell
       title={title}
       actions={
-        <Link href="/purchases">
-          <Button variant="secondary">
-            <ArrowLeft className="h-4 w-4" />
-            All purchases
-          </Button>
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/purchases">
+            <Button variant="secondary">
+              <ArrowLeft className="h-4 w-4" />
+              All purchases
+            </Button>
+          </Link>
+          <Link href={`/purchases/${p.id}/edit`}>
+            <Button>
+              <Pencil className="h-4 w-4" />
+              Edit purchase
+            </Button>
+          </Link>
+        </div>
       }
     >
       <section className="mb-4 rounded-[10px] border border-line bg-cream-50 p-4">
@@ -79,6 +88,7 @@ export default async function PurchaseDetailPage({
             <TH numeric>Cost/unit</TH>
             <TH numeric>Discount</TH>
             <TH numeric>Amount</TH>
+            <TH numeric>Sell price</TH>
             <TH numeric>Left</TH>
           </TR>
         </THead>
@@ -105,6 +115,13 @@ export default async function PurchaseDetailPage({
                   : "—"}
               </TD>
               <TD numeric>{formatPaisa(l.lineTotalPaisa, false)}</TD>
+              {/* The price set on this purchase (0022). A dash is an older
+                  purchase, from before the price was recorded here. */}
+              <TD numeric>
+                {l.sellingRatePaisa > 0
+                  ? formatPaisa(l.sellingRatePaisa, false)
+                  : "—"}
+              </TD>
               {/* What this batch brought in and what is still on the shelf.
                   In base units, because that is what stock is counted in. */}
               <TD numeric>
@@ -152,18 +169,13 @@ export default async function PurchaseDetailPage({
         </div>
       </section>
 
-      <p className="mt-4 flex items-center gap-1.5 text-[12.5px] text-sage-500">
-        <ShoppingCart className="h-3.5 w-3.5 shrink-0" />
-        A saved purchase is not edited — it has already raised stock. Correct
-        one with a{" "}
-        <Link
-          href="/purchases/returns"
-          className="underline underline-offset-2 hover:text-sage-900"
-        >
-          purchase return
-        </Link>
-        .
-      </p>
+      {p.lastEdit && (
+        <p className="mt-4 flex items-center gap-1.5 text-[12.5px] text-sage-500">
+          <History className="h-3.5 w-3.5 shrink-0" />
+          Last changed by {p.lastEdit.byName} on {nepalTime(p.lastEdit.at)}.
+          The full before-and-after is in the audit log.
+        </p>
+      )}
     </PageShell>
   );
 }
@@ -192,4 +204,17 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="text-[14px] tabular-nums text-sage-900">{value}</span>
     </div>
   );
+}
+
+/**
+ * A stored UTC timestamp as the clinic reads it: the BS date and the time in
+ * Nepal. The server runs on UTC, so formatting it with the server's own clock
+ * would put an evening edit on the wrong day. Nepal has no daylight saving, so
+ * a fixed +05:45 is exact.
+ */
+function nepalTime(isoUtc: string): string {
+  const npt = new Date(new Date(isoUtc).getTime() + (5 * 60 + 45) * 60_000);
+  const ymd = npt.toISOString().slice(0, 10);
+  const hhmm = npt.toISOString().slice(11, 16);
+  return `${formatBS(toBS(adFromIso(ymd)), { form: "long", monthScript: "en" })}, ${hhmm}`;
 }

@@ -15,6 +15,7 @@ const ACTION_LABEL: Record<string, string> = {
   "dues.received": "Dues paid back",
   "dues.voided": "Dues payment undone",
   "stock_out.recorded": "Stock taken out",
+  purchase_edit: "Purchase changed",
   restore: "Everything restored from a backup",
   "fiscal_year.closed": "Year closed",
 

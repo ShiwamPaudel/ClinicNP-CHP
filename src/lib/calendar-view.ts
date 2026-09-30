@@ -299,21 +299,41 @@ export function numericInCalendar(
 }
 
 /**
+ * The first year that is read as Nepali (BS) when typed; anything earlier is
+ * English (AD).
+ *
+ * BS runs about 57 years ahead of AD, so the two never overlap for any date
+ * this system will see: AD 2060 is 34 years away, further than any expiry,
+ * and BS 2059 is AD 2002, older than any purchase. The year is therefore
+ * enough to tell which calendar a typed date is in.
+ */
+export const BS_TYPED_YEAR_FROM = 2060;
+
+/** Which calendar a typed four-digit year belongs to. */
+export function calendarOfTypedYear(year: number): DateCalendar {
+  return year >= BS_TYPED_YEAR_FROM ? "bs" : "ad";
+}
+
+/**
  * Read a date somebody typed and return it as BS text, or null if it is not a
  * date yet.
  *
- * The text is read in whichever calendar the box is showing, because that is
- * the one the person is reading off the screen — and for an expiry it is the
- * one printed on the pack. Separators are forgiving (`-`, `/`, `.`) and a
- * single-digit month or day is accepted, since nobody types the leading zero
- * on 2083-6-9. Everything else is refused rather than guessed at: a half-typed
- * "2083-0" is not a date, and returning null keeps the stored value untouched
- * while the rest of it is still being typed.
+ * **The year decides the calendar, not the setting.** People copy these dates
+ * off paper: a medicine pack prints English ("EXP 01/2028") and a Nepali
+ * supplier's bill prints Nepali ("2083/06/13"), often on the same purchase.
+ * Reading every typed date in the shop's one calendar got both wrong in turn —
+ * with the setting on Nepali, "2028-01-31" off a pack was saved as 14 May
+ * 1971; with it on English, "2083-06-13" off a bill was refused. So "2028-…"
+ * is English and "2083-…" is Nepali wherever they are typed
+ * (`calendarOfTypedYear`). The setting still decides how dates are *shown*.
+ *
+ * Separators are forgiving (`-`, `/`, `.`) and a single-digit month or day is
+ * accepted, since nobody types the leading zero on 2083-6-9. Everything else is
+ * refused rather than guessed at: a half-typed "2083-0" is not a date, and
+ * returning null keeps the stored value untouched while the rest of it is
+ * still being typed.
  */
-export function parseTypedDate(
-  text: string,
-  calendar: DateCalendar,
-): string | null {
+export function parseTypedDate(text: string): string | null {
   const m = text.trim().match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
   if (!m) return null;
   const year = Number(m[1]);
@@ -321,7 +341,7 @@ export function parseTypedDate(
   const day = Number(m[3]);
   if (month < 1 || month > 12 || day < 1 || day > 32) return null;
 
-  if (calendar === "bs") {
+  if (calendarOfTypedYear(year) === "bs") {
     // parseBsValue does the real check: it refuses a day the month does not
     // have, and a year outside the conversion table.
     return parseBsValue(bsToDbText({ year, month, day })) ? bsToDbText({ year, month, day }) : null;
@@ -345,4 +365,66 @@ export function parseTypedDate(
     // Outside the conversion table.
     return null;
   }
+}
+
+/**
+ * Shape what somebody is typing into a date as they type it: digits only, with
+ * the dashes put in for them. "20830609" arrives as "2083-06-09", and the dash
+ * after the year appears the moment the fourth digit does, so nobody has to
+ * find `-` or `/` — which a phone's number pad does not even have.
+ *
+ * Three things make it bearable to use rather than merely correct:
+ *
+ *  - **Deleting is not fought.** A trailing dash is only added while the text
+ *    is growing. Backspace over "2083-" and it becomes "2083", not "2083-"
+ *    again — otherwise the dash would reappear forever and the year could
+ *    never be corrected.
+ *  - **Separators still work.** Somebody who types "2083-6-9" or pastes
+ *    "2083/06/09" gets what they meant: a separator typed after a one-digit
+ *    month or day pads it with a zero instead of being thrown away.
+ *  - **It never guesses a date.** It only arranges characters. Whether the
+ *    result is a real day is still `parseTypedDate`'s decision, so a half-typed
+ *    value simply does not commit.
+ *
+ * `previous` is what the box held before this keystroke.
+ */
+export function maskTypedDate(raw: string, previous = ""): string {
+  let year = "";
+  let month = "";
+  let day = "";
+  // 0 = typing the year, 1 = the month, 2 = the day
+  let part = 0;
+
+  for (const ch of raw) {
+    if (ch >= "0" && ch <= "9") {
+      if (part === 0) {
+        year += ch;
+        if (year.length === 4) part = 1;
+      } else if (part === 1) {
+        month += ch;
+        if (month.length === 2) part = 2;
+      } else if (day.length < 2) {
+        day += ch;
+      }
+    } else if (ch === "-" || ch === "/" || ch === "." || ch === " ") {
+      // A separator closes a one-digit month or day. One that arrives where a
+      // dash was already put in — or after nothing at all — is ignored.
+      if (part === 1 && month.length === 1) {
+        month = `0${month}`;
+        part = 2;
+      } else if (part === 2 && day.length === 1) {
+        day = `0${day}`;
+      }
+    }
+  }
+
+  let out = year;
+  if (part >= 1) out += "-";
+  out += month;
+  if (part >= 2) out += "-";
+  out += day;
+
+  const deleting = raw.length < previous.length;
+  if (deleting && out.endsWith("-")) out = out.slice(0, -1);
+  return out;
 }

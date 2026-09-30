@@ -8,10 +8,13 @@ import {
   canStep,
   clampView,
   formatInCalendar,
+  maskTypedDate,
   monthGrid,
   numericInCalendar,
   parseBsValue,
   parseTypedDate,
+  calendarOfTypedYear,
+  BS_TYPED_YEAR_FROM,
   stepView,
   supportedAdRange,
   switchCalendar,
@@ -178,19 +181,19 @@ describe("writing a date out", () => {
  */
 describe("parseTypedDate", () => {
   it("reads a BS date typed in the Nepali calendar", () => {
-    expect(parseTypedDate("2083-06-09", "bs")).toBe("2083-06-09");
+    expect(parseTypedDate("2083-06-09")).toBe("2083-06-09");
   });
 
   it("accepts the separators and the short forms people actually type", () => {
-    expect(parseTypedDate("2083/06/09", "bs")).toBe("2083-06-09");
-    expect(parseTypedDate("2083.06.09", "bs")).toBe("2083-06-09");
-    expect(parseTypedDate("2083-6-9", "bs")).toBe("2083-06-09");
-    expect(parseTypedDate("  2083-06-09  ", "bs")).toBe("2083-06-09");
+    expect(parseTypedDate("2083/06/09")).toBe("2083-06-09");
+    expect(parseTypedDate("2083.06.09")).toBe("2083-06-09");
+    expect(parseTypedDate("2083-6-9")).toBe("2083-06-09");
+    expect(parseTypedDate("  2083-06-09  ")).toBe("2083-06-09");
   });
 
   it("converts a date typed in the English calendar", () => {
     // The same day, written both ways.
-    const bs = parseTypedDate("2026-09-25", "ad");
+    const bs = parseTypedDate("2026-09-25");
     expect(bs).not.toBeNull();
     expect(formatInCalendar(bs!, "ad")).toBe("25 Sep 2026");
   });
@@ -198,15 +201,15 @@ describe("parseTypedDate", () => {
   it("round-trips against numericInCalendar in both calendars", () => {
     for (const value of ["2083-01-01", "2083-06-09", "2083-12-30"]) {
       for (const cal of ["bs", "ad"] as const) {
-        expect(parseTypedDate(numericInCalendar(value, cal), cal)).toBe(value);
+        expect(parseTypedDate(numericInCalendar(value, cal))).toBe(value);
       }
     }
   });
 
   it("refuses a day that month does not have", () => {
     // 31 February is not a date, and JS Date would silently roll it to March.
-    expect(parseTypedDate("2026-02-31", "ad")).toBeNull();
-    expect(parseTypedDate("2026-04-31", "ad")).toBeNull();
+    expect(parseTypedDate("2026-02-31")).toBeNull();
+    expect(parseTypedDate("2026-04-31")).toBeNull();
   });
 
   it("refuses half-typed and malformed text", () => {
@@ -225,13 +228,35 @@ describe("parseTypedDate", () => {
       "next week",
       "2083-06-09extra",
     ]) {
-      expect(parseTypedDate(bad, "bs"), bad).toBeNull();
+      expect(parseTypedDate(bad), bad).toBeNull();
     }
   });
 
+  it("reads the calendar from the year, whatever the shop is set to", () => {
+    // off a medicine pack, in English
+    const pack = parseTypedDate("2028-01-31");
+    expect(pack).not.toBeNull();
+    expect(formatInCalendar(pack!, "ad")).toBe("31 Jan 2028");
+    // off a Nepali supplier's bill, the same week as today
+    expect(parseTypedDate("2083-06-13")).toBe("2083-06-13");
+    expect(formatInCalendar("2083-06-13", "ad")).toBe("29 Sep 2026");
+    // the owner's example is an English year, and 30 February is no date —
+    // before this it was saved as 12 June 1968 on a Nepali-set shop
+    expect(parseTypedDate("2025-02-30")).toBeNull();
+  });
+
+  it("splits the years where no real date could fall on the wrong side", () => {
+    expect(calendarOfTypedYear(2059)).toBe("ad");
+    expect(calendarOfTypedYear(2060)).toBe("bs");
+    expect(calendarOfTypedYear(BS_TYPED_YEAR_FROM)).toBe("bs");
+    // today, in both calendars, is on the right side of the line
+    expect(calendarOfTypedYear(2026)).toBe("ad");
+    expect(calendarOfTypedYear(2083)).toBe("bs");
+  });
+
   it("refuses a year outside the conversion table", () => {
-    expect(parseTypedDate("2200-01-01", "bs")).toBeNull();
-    expect(parseTypedDate("1800-01-01", "ad")).toBeNull();
+    expect(parseTypedDate("2200-01-01")).toBeNull();
+    expect(parseTypedDate("1800-01-01")).toBeNull();
   });
 
   it("numericInCalendar gives back plain digits, and nothing for a non-date", () => {
@@ -239,5 +264,78 @@ describe("parseTypedDate", () => {
     expect(numericInCalendar("2083-06-09", "ad")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(numericInCalendar("", "bs")).toBe("");
     expect(numericInCalendar("not-a-date", "ad")).toBe("");
+  });
+});
+
+/**
+ * The dashes put in while typing. Each case is replayed one keystroke at a
+ * time, the way the box actually receives it, because a mask that is right on
+ * a pasted string can still trap somebody typing into it.
+ */
+describe("maskTypedDate", () => {
+  /** Feed characters in one by one, as keystrokes arrive. */
+  function type(keys: string): string {
+    let box = "";
+    for (const k of keys) box = maskTypedDate(box + k, box);
+    return box;
+  }
+  /** Press backspace n times from what is in the box. */
+  function backspace(start: string, n: number): string {
+    let box = start;
+    for (let i = 0; i < n; i++) box = maskTypedDate(box.slice(0, -1), box);
+    return box;
+  }
+
+  it("puts the dashes in while digits are typed", () => {
+    expect(type("2083")).toBe("2083-");
+    expect(type("208306")).toBe("2083-06-");
+    expect(type("20830609")).toBe("2083-06-09");
+    // the owner's example, typed straight through
+    expect(type("20250230")).toBe("2025-02-30");
+  });
+
+  it("formats a pasted run of digits in one go", () => {
+    expect(maskTypedDate("20830609", "")).toBe("2083-06-09");
+  });
+
+  it("stops at a full date", () => {
+    expect(type("2083060912")).toBe("2083-06-09");
+  });
+
+  it("accepts the separators people type out of habit", () => {
+    expect(type("2083-06-09")).toBe("2083-06-09");
+    expect(type("2083/06/09")).toBe("2083-06-09");
+    expect(maskTypedDate("2083.06.09", "")).toBe("2083-06-09");
+  });
+
+  it("pads a one-digit month or day when a separator closes it", () => {
+    expect(type("2083-6-")).toBe("2083-06-");
+    expect(type("2083-6-9")).toBe("2083-06-9");
+    // and the short form still parses to the right day
+    expect(parseTypedDate(type("2083-6-9"))).toBe("2083-06-09");
+  });
+
+  it("lets backspace remove a dash instead of putting it back", () => {
+    expect(backspace("2083-", 1)).toBe("2083");
+    expect(backspace("2083-06-", 1)).toBe("2083-06");
+    // A dash never costs a keystroke of its own: removing the day's last
+    // digit takes the dash before it too, so two presses reach the month.
+    expect(backspace("2083-06-09", 1)).toBe("2083-06-0");
+    expect(backspace("2083-06-09", 2)).toBe("2083-06");
+    expect(backspace("2083-06-09", 3)).toBe("2083-0");
+    // and typing forward again from there puts the dash back
+    expect(maskTypedDate("2083-061", "2083-06")).toBe("2083-06-1");
+    expect(backspace("2083-06-09", 10)).toBe("");
+  });
+
+  it("ignores letters and anything that is not part of a date", () => {
+    expect(maskTypedDate("20a83b0609", "")).toBe("2083-06-09");
+    expect(maskTypedDate("abc", "")).toBe("");
+  });
+
+  it("only arranges characters — it does not decide what is a real date", () => {
+    // 31 February is shaped like a date; parseTypedDate is what refuses it.
+    expect(maskTypedDate("20260231", "")).toBe("2026-02-31");
+    expect(parseTypedDate("2026-02-31")).toBeNull();
   });
 });

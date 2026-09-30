@@ -2,15 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, RefreshCw, Trash2, TriangleAlert } from "lucide-react";
+import { Lock, Plus, RefreshCw, Trash2, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input, Field } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { DatePickerBS } from "@/components/ui/date-picker-bs";
+import { Dialog } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { InvoicePhotoButton } from "@/components/app/invoice-photo";
-import { createPurchaseAction } from "@/app/(app)/purchases/actions";
+import {
+  createPurchaseAction,
+  updatePurchaseAction,
+} from "@/app/(app)/purchases/actions";
 import { toPaisa, formatPaisa, vatOf } from "@/lib/money";
 import { clampPercent, resolveBillDiscount, type DiscountMode } from "@/lib/discount";
 import { bsToDbText, today } from "@/lib/bs";
@@ -28,6 +32,19 @@ interface LineState {
   freeQty: string;
   costRupees: string;
   discountRupees: string;
+  /**
+   * The selling price for the unit on this line. Pre-filled with the item's
+   * current price when the item or unit is chosen; saving a different figure
+   * updates the item's price for that unit (0022). Blank = leave it alone.
+   */
+  sellRupees: string;
+  /** Edit only: the saved line this row is. A new row has none. */
+  lineId?: string;
+  /**
+   * Edit only: something other than this purchase has already moved stock in
+   * its batch, so the item cannot be swapped and the line cannot be removed.
+   */
+  locked?: boolean;
   /**
    * Only set on lines that came off a photo: the medicine's name as the
    * supplier printed it, and whether the row's own arithmetic disagreed with
@@ -47,32 +64,72 @@ function blankLine(): LineState {
     freeQty: "0",
     costRupees: "0",
     discountRupees: "0",
+    sellRupees: "",
   };
+}
+
+/** A saved purchase, shaped for the form, when it is opened to be edited. */
+export interface PurchaseFormInitial {
+  purchaseId: string;
+  purchaseNo: string | null;
+  supplierId: string;
+  supplierInvoiceNo: string;
+  dateBs: string;
+  applyVat: boolean;
+  billDiscountRupees: string;
+  roundingRupees: string;
+  lines: Omit<LineState, "printedName" | "amountDisagrees">[];
+}
+
+/** An item's current price for one unit, as the rupees a box shows. */
+function rateFor(item: Item | undefined, level: number): string {
+  const paisa = item?.units.find((u) => u.level === level)?.sellingRatePaisa ?? 0;
+  if (paisa <= 0) return "";
+  const rupees = paisa / 100;
+  return Number.isInteger(rupees) ? String(rupees) : rupees.toFixed(2);
 }
 
 export function PurchaseForm({
   items,
   suppliers,
+  initial,
 }: {
   items: Item[];
   suppliers: Supplier[];
+  /**
+   * A saved purchase to change. Absent = a new purchase, which behaves
+   * exactly as it always has; present = the edit screen, which saves through
+   * `updatePurchaseAction` after the admin re-types their password.
+   */
+  initial?: PurchaseFormInitial;
 }) {
   const router = useRouter();
   const toast = useToast();
-  const [supplierId, setSupplierId] = useState("");
-  const [invoiceNo, setInvoiceNo] = useState("");
-  const [dateBs, setDateBs] = useState(bsToDbText(today()));
-  const [applyVat, setApplyVat] = useState(false);
+  const editing = initial !== undefined;
+  const [supplierId, setSupplierId] = useState(initial?.supplierId ?? "");
+  const [invoiceNo, setInvoiceNo] = useState(initial?.supplierInvoiceNo ?? "");
+  const [dateBs, setDateBs] = useState(initial?.dateBs ?? bsToDbText(today()));
+  const [applyVat, setApplyVat] = useState(initial?.applyVat ?? false);
   // Suppliers take their discount off the whole bill, after the lines: some
   // print a percentage ("10% Discount"), some an amount ("LESS DISCOUNT
   // 480.61"), and most then round the net total to whole rupees (D-143).
   const [billDiscountMode, setBillDiscountMode] = useState<DiscountMode>("amount");
-  const [billDiscountRupees, setBillDiscountRupees] = useState("");
+  const [billDiscountRupees, setBillDiscountRupees] = useState(
+    initial?.billDiscountRupees ?? "",
+  );
   const [billDiscountPercent, setBillDiscountPercent] = useState("");
-  const [roundingRupees, setRoundingRupees] = useState("");
-  const [lines, setLines] = useState<LineState[]>([blankLine()]);
+  const [roundingRupees, setRoundingRupees] = useState(initial?.roundingRupees ?? "");
+  const [lines, setLines] = useState<LineState[]>(
+    initial ? initial.lines.map((l) => ({ ...l })) : [blankLine()],
+  );
   const [busy, setBusy] = useState(false);
-  const [showBonus, setShowBonus] = useState(false);
+  const [showBonus, setShowBonus] = useState(
+    initial ? initial.lines.some((l) => Number(l.freeQty) > 0) : false,
+  );
+  // Edit only: the password prompt, and what it last said.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [confirmError, setConfirmError] = useState("");
   // What a photo said the bill came to, kept only so the form can say whether
   // the two agree. It is never what gets saved — the lines are.
   const [billNetTotalPaisa, setBillNetTotalPaisa] = useState<number | null>(null);
@@ -113,6 +170,7 @@ export function PurchaseForm({
         qty: l.qty,
         freeQty: l.freeQty,
         costRupees: l.costRupees,
+        sellRupees: rateFor(itemsById.get(l.itemId), l.unitLevel),
         printedName: l.printedName,
         amountDisagrees: l.amountDisagrees,
       })),
@@ -125,7 +183,13 @@ export function PurchaseForm({
     const topLevel = item
       ? Math.max(...item.units.map((u) => u.level))
       : 0;
-    setLine(i, { itemId, unitLevel: topLevel });
+    setLine(i, { itemId, unitLevel: topLevel, sellRupees: rateFor(item, topLevel) });
+  }
+
+  /** A price belongs to a unit, so a new unit brings its own price with it. */
+  function onUnitChange(i: number, unitLevel: number) {
+    const item = itemsById.get(lines[i]?.itemId ?? "");
+    setLine(i, { unitLevel, sellRupees: rateFor(item, unitLevel) });
   }
 
   const totals = useMemo(() => {
@@ -196,13 +260,66 @@ export function PurchaseForm({
         toast.error(`Line ${i + 1}: enter the expiry date.`);
         return;
       }
+      if (l.sellRupees.trim() !== "" && !(Number(l.sellRupees) >= 0)) {
+        toast.error(`Line ${i + 1}: the selling price is not a number.`);
+        return;
+      }
     }
     if (billDiscountMode === "percent" && Number(billDiscountPercent) > 100) {
       toast.error("A discount cannot be more than 100%.");
       return;
     }
+    // A change to a saved purchase is not saved until the admin types their
+    // password; the prompt does the rest.
+    if (editing) {
+      setPassword("");
+      setConfirmError("");
+      setConfirmOpen(true);
+      return;
+    }
     setBusy(true);
-    const res = await createPurchaseAction({
+    const res = await createPurchaseAction(payload());
+    setBusy(false);
+    if (res.ok) {
+      toast.success(`Purchase saved (${res.purchaseNo})`);
+      router.push("/purchases");
+      router.refresh();
+    } else {
+      toast.error(res.userMessage ?? strings.somethingWentWrong);
+    }
+  }
+
+  async function saveEdit() {
+    if (!initial) return;
+    if (!password) {
+      setConfirmError("Enter your password.");
+      return;
+    }
+    setBusy(true);
+    const res = await updatePurchaseAction({
+      ...payload(),
+      purchaseId: initial.purchaseId,
+      password,
+    });
+    setBusy(false);
+    setPassword("");
+    if (res.ok) {
+      setConfirmOpen(false);
+      toast.success(
+        initial.purchaseNo ? `Purchase ${initial.purchaseNo} updated` : "Purchase updated",
+      );
+      router.push(`/purchases/${initial.purchaseId}`);
+      router.refresh();
+    } else {
+      // Stays open: a wrong password or a stock refusal is read here, next to
+      // the thing that caused it, and the form behind keeps every change.
+      setConfirmError(res.userMessage ?? strings.somethingWentWrong);
+    }
+  }
+
+  /** What is sent for a save, new or edited. */
+  function payload() {
+    return {
       supplierId,
       supplierInvoiceNo: invoiceNo,
       dateBs,
@@ -210,6 +327,7 @@ export function PurchaseForm({
       billDiscountPaisa: totals.billDiscount,
       roundingPaisa: totals.rounding,
       lines: lines.map((l) => ({
+        lineId: l.lineId,
         itemId: l.itemId,
         batchNo: l.batchNo.trim(),
         // Not collected on this screen any more. The server still
@@ -222,23 +340,20 @@ export function PurchaseForm({
         freeQty: Number(l.freeQty) || 0,
         unitCostPaisa: toPaisa(Number(l.costRupees) || 0),
         discountPaisa: toPaisa(Number(l.discountRupees) || 0),
+        sellingRatePaisa: toPaisa(Number(l.sellRupees) || 0),
       })),
-    });
-    setBusy(false);
-    if (res.ok) {
-      toast.success(`Purchase saved (${res.purchaseNo})`);
-      router.push("/purchases");
-      router.refresh();
-    } else {
-      toast.error(res.userMessage ?? strings.somethingWentWrong);
-    }
+    };
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <section className="rounded-[10px] border border-line bg-cream-50 p-4">
-        <InvoicePhotoButton items={items} onDraft={applyDraft} />
-      </section>
+      {/* A photo replaces every line, which is what a new purchase wants and
+          exactly what an edit must not do. */}
+      {!editing && (
+        <section className="rounded-[10px] border border-line bg-cream-50 p-4">
+          <InvoicePhotoButton items={items} onDraft={applyDraft} />
+        </section>
+      )}
 
       <section className="rounded-[10px] border border-line bg-cream-50 p-6">
         <div className="grid gap-4 sm:grid-cols-3">
@@ -256,7 +371,9 @@ export function PurchaseForm({
             <Input value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} />
           </Field>
           <Field label="Date">
-            <DatePickerBS value={dateBs} onChange={setDateBs} />
+            {/* Typed or picked, like the expiry — the date is copied off the
+                supplier's bill too. */}
+            <DatePickerBS value={dateBs} onChange={setDateBs} typable />
           </Field>
         </div>
       </section>
@@ -310,14 +427,22 @@ export function PurchaseForm({
                   className={
                     "grid gap-3 sm:grid-cols-2 sm:items-end " +
                     (showBonus
-                      ? "lg:grid-cols-[minmax(0,1.9fr)_0.85fr_1fr_1.2fr_0.62fr_0.62fr_0.9fr_auto]"
-                      : "lg:grid-cols-[minmax(0,2.1fr)_0.9fr_1.05fr_1.25fr_0.7fr_0.95fr_auto]")
+                      ? "lg:grid-cols-[minmax(0,1.7fr)_0.8fr_0.95fr_1.15fr_0.6fr_0.6fr_0.85fr_0.85fr_auto]"
+                      : "lg:grid-cols-[minmax(0,1.9fr)_0.85fr_1fr_1.2fr_0.65fr_0.9fr_0.9fr_auto]")
                   }
                 >
                   <Field label="Item">
                     <Select
                       value={l.itemId}
                       onChange={(e) => onItemChange(i, e.target.value)}
+                      // Stock from this batch has moved, so it is this item
+                      // for good; the server refuses the swap either way.
+                      disabled={l.locked}
+                      title={
+                        l.locked
+                          ? "Stock from this line has been sold, returned or counted, so its item can't be changed."
+                          : undefined
+                      }
                     >
                       <option value="">— Choose —</option>
                       {items.map((it) => (
@@ -330,9 +455,7 @@ export function PurchaseForm({
                   <Field label="Unit">
                     <Select
                       value={String(l.unitLevel)}
-                      onChange={(e) =>
-                        setLine(i, { unitLevel: Number(e.target.value) })
-                      }
+                      onChange={(e) => onUnitChange(i, Number(e.target.value))}
                     >
                       {(item?.units ?? [])
                         .sort((a, b) => b.level - a.level)
@@ -389,8 +512,27 @@ export function PurchaseForm({
                       onChange={(e) => setLine(i, { costRupees: e.target.value })}
                     />
                   </Field>
+                  <Field label="Sell price (रू)">
+                    <Input
+                      numeric
+                      inputMode="decimal"
+                      value={l.sellRupees}
+                      // Blank on an old line means "not recorded"; the hint is
+                      // the item's price today, which a blank leaves alone.
+                      placeholder={rateFor(item, l.unitLevel) || "—"}
+                      onChange={(e) => setLine(i, { sellRupees: e.target.value })}
+                    />
+                  </Field>
                   <div className="flex h-10 items-center">
-                    {lines.length > 1 && (
+                    {l.locked ? (
+                      <span
+                        className="p-2 text-sage-400"
+                        title="Stock from this line has been sold, returned or counted, so it can't be removed."
+                        aria-label="This line can't be removed"
+                      >
+                        <Lock className="h-4 w-4" />
+                      </span>
+                    ) : lines.length > 1 && (
                       <button
                         type="button"
                         onClick={() =>
@@ -404,6 +546,17 @@ export function PurchaseForm({
                     )}
                   </div>
                 </div>
+                {/* Selling below cost is almost always a slip of one digit.
+                    It is said, not refused: a loss-leader is the shop's call. */}
+                {Number(l.sellRupees) > 0 &&
+                  Number(l.costRupees) > 0 &&
+                  Number(l.sellRupees) < Number(l.costRupees) && (
+                    <p className="mt-2 flex items-center gap-1.5 text-[12px] text-danger-600">
+                      <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+                      The selling price is below the cost of {l.costRupees} —
+                      check it before saving.
+                    </p>
+                  )}
                 {/* What the paper actually said, so the person can check the
                     guess — or find the medicine themselves when there was no
                     guess to make. Full width under the row rather than inside
@@ -571,14 +724,76 @@ export function PurchaseForm({
           </p>
         )}
         <div className="mt-2 flex gap-2">
-          <Button variant="secondary" onClick={() => router.push("/purchases")}>
+          <Button
+            variant="secondary"
+            onClick={() =>
+              router.push(editing ? `/purchases/${initial!.purchaseId}` : "/purchases")
+            }
+          >
             {strings.cancel}
           </Button>
           <Button onClick={submit} disabled={busy}>
-            {busy ? "…" : "Save purchase"}
+            {busy ? "…" : editing ? "Save changes" : "Save purchase"}
           </Button>
         </div>
       </section>
+
+      {editing && (
+        <Dialog
+          open={confirmOpen}
+          onClose={() => {
+            if (!busy) setConfirmOpen(false);
+          }}
+          title="Confirm the change"
+          footer={
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => setConfirmOpen(false)}
+                disabled={busy}
+              >
+                {strings.cancel}
+              </Button>
+              <Button onClick={saveEdit} disabled={busy}>
+                {busy ? "…" : "Save changes"}
+              </Button>
+            </>
+          }
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void saveEdit();
+            }}
+            className="flex flex-col gap-3"
+          >
+            <p className="text-[13.5px] text-sage-700">
+              This changes a saved purchase and the stock it put on the shelf.
+              Type your password to save it. The change is recorded under your
+              name.
+            </p>
+            <Field label="Your password" htmlFor="confirm-password">
+              <Input
+                id="confirm-password"
+                type="password"
+                autoComplete="current-password"
+                autoFocus
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setConfirmError("");
+                }}
+              />
+            </Field>
+            {confirmError && (
+              <p className="flex items-start gap-1.5 text-[13px] text-danger-600">
+                <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                {confirmError}
+              </p>
+            )}
+          </form>
+        </Dialog>
+      )}
     </div>
   );
 }
