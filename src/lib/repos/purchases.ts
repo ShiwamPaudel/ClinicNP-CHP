@@ -46,6 +46,13 @@ export interface PurchaseInput {
   roundingPaisa?: number;
   lines: PurchaseLineInput[];
   userId: string;
+  /**
+   * Paid as the purchase was entered (0023). Absent means all of it on credit,
+   * which is what every purchase was before — so every caller written before
+   * this existed behaves as it always did. "full" pays the total worked out
+   * here, never a figure from the browser.
+   */
+  payment?: { mode: "full" | "part"; amountPaisa: number; method: string };
 }
 
 export interface PurchaseTotals {
@@ -142,7 +149,7 @@ function priceStatements(
 /** Create a purchase, its batches, stock moves, and lines atomically. */
 export async function createPurchase(
   input: PurchaseInput,
-): Promise<{ id: string; purchaseNo: string }> {
+): Promise<{ id: string; purchaseNo: string; paidPaisa: number }> {
   // Purchases are booked into the open year. A database that has never had one
   // (a fresh install) bootstraps the current year rather than refusing.
   const fy = (await getOpenFiscalYear()) ?? (await bootstrapCurrentFiscalYear());
@@ -159,6 +166,23 @@ export async function createPurchase(
   );
   const purchaseId = ulid();
   const now = new Date().toISOString();
+
+  // What was handed over with this purchase. More than the bill is refused
+  // rather than booked as money paid ahead: it is far more often a typo, and
+  // an advance can still be paid from Payables on purpose.
+  let paidPaisa = 0;
+  if (input.payment) {
+    paidPaisa =
+      input.payment.mode === "full"
+        ? totals.totalPaisa
+        : Math.trunc(input.payment.amountPaisa);
+    if (paidPaisa < 0) paidPaisa = 0;
+    if (paidPaisa > totals.totalPaisa) {
+      throw new PurchaseEditError(
+        "The amount paid is more than the bill. Choose \"Paid in full\", or check the amount.",
+      );
+    }
+  }
 
   const stmts: InStatement[] = [];
   stmts.push({
@@ -237,6 +261,50 @@ export async function createPurchase(
     }
   }
 
+  // The payment is an ordinary supplier payment, so the supplier's balance is
+  // worked out exactly as before; `purchase_id` only says which purchase it
+  // came with (0023). Written after the purchase row it points at.
+  if (paidPaisa > 0) {
+    const paymentId = ulid();
+    stmts.push({
+      sql: `INSERT INTO supplier_payments
+              (id, supplier_id, date_ad, date_bs, amount_paisa, method, note,
+               purchase_id, user_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        paymentId,
+        input.supplierId,
+        input.dateAd,
+        input.dateBs,
+        paidPaisa,
+        input.payment!.method,
+        `With purchase ${purchaseNo}`,
+        purchaseId,
+        input.userId,
+        now,
+      ],
+    });
+    stmts.push({
+      sql: `INSERT INTO audit_log (id, user_id, action, detail_json, at)
+            VALUES (?, ?, 'supplier.payment', ?, ?)`,
+      args: [
+        ulid(),
+        input.userId,
+        JSON.stringify({
+          entity: "supplier",
+          entityId: input.supplierId,
+          paymentId,
+          purchaseId,
+          purchaseNo,
+          amountPaisa: paidPaisa,
+          method: input.payment!.method,
+          dateBs: input.dateBs,
+        }),
+        now,
+      ],
+    });
+  }
+
   // advance the purchase sequence (guarded against a concurrent writer)
   if (fy) {
     stmts.push({
@@ -247,7 +315,7 @@ export async function createPurchase(
   }
 
   await db().batch(stmts);
-  return { id: purchaseId, purchaseNo };
+  return { id: purchaseId, purchaseNo, paidPaisa };
 }
 
 export interface PurchaseListRow {
@@ -389,6 +457,14 @@ export interface PurchaseDetail {
   createdAt: string;
   /** The most recent edit, from the audit log; null if never edited. */
   lastEdit: { byName: string; at: string } | null;
+  /** Paid as it was entered (0023), undone ones included and marked. */
+  payments: {
+    id: string;
+    amountPaisa: number;
+    method: string;
+    dateBs: string;
+    voided: boolean;
+  }[];
   lines: PurchaseDetailLine[];
 }
 
@@ -445,6 +521,12 @@ export async function getPurchase(id: string): Promise<PurchaseDetail | null> {
           ORDER BY a.at DESC LIMIT 1`,
     args: [`%"purchaseId":"${id}"%`],
   });
+  const paid = await db().execute({
+    sql: `SELECT id, amount_paisa, method, date_bs, voided_at FROM supplier_payments
+          WHERE purchase_id = ? ORDER BY created_at ASC`,
+    args: [id],
+  });
+
   const lastEdit = edited.rows[0]
     ? {
         byName: (edited.rows[0].user_name as string | null) ?? "Unknown",
@@ -469,6 +551,13 @@ export async function getPurchase(id: string): Promise<PurchaseDetail | null> {
     enteredBy: (r.user_name as string | null) ?? null,
     createdAt: r.created_at as string,
     lastEdit,
+    payments: paid.rows.map((p: Row) => ({
+      id: p.id as string,
+      amountPaisa: Number(p.amount_paisa),
+      method: p.method as string,
+      dateBs: p.date_bs as string,
+      voided: p.voided_at != null,
+    })),
     lines: lines.rows.map((l: Row) => {
       const qty = Number(l.qty);
       const cost = Number(l.cost_paisa);
@@ -517,7 +606,10 @@ export interface PurchaseUpdateInput {
   userId: string;
 }
 
-/** An edit refused for a reason the person can act on. */
+/**
+ * A purchase save or edit refused for a reason the person can act on. (The
+ * name is older than the purchase-entry payment check, which uses it too.)
+ */
 export class PurchaseEditError extends Error {
   constructor(public userMessage: string) {
     super(userMessage);
@@ -831,6 +923,20 @@ export async function updatePurchase(input: PurchaseUpdateInput): Promise<void> 
       ],
     });
 
+    // Money handed over with this purchase went to whoever really supplied
+    // it, so a corrected supplier takes that payment along with the bill —
+    // otherwise one supplier would show paid and the other owed for the same
+    // invoice (0023). Undone payments move too: they belong to this bill.
+    let paymentsMoved = 0;
+    if (before.supplier_id !== input.supplierId) {
+      const moved = await tx.execute({
+        sql: `UPDATE supplier_payments SET supplier_id = ?
+              WHERE purchase_id = ? AND supplier_id = ?`,
+        args: [input.supplierId, pid, before.supplier_id as string],
+      });
+      paymentsMoved = Number(moved.rowsAffected);
+    }
+
     // --- the record of it, before and after ---
     await tx.execute({
       sql: `INSERT INTO audit_log (id, user_id, action, detail_json, at)
@@ -865,6 +971,7 @@ export async function updatePurchase(input: PurchaseUpdateInput): Promise<void> 
               discountPaisa: l.discountPaisa, sellingRatePaisa: l.sellingRatePaisa ?? 0,
             })),
           },
+          ...(paymentsMoved > 0 ? { paymentsMovedToNewSupplier: paymentsMoved } : {}),
         }),
         now,
       ],

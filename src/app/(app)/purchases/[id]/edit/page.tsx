@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Lock } from "lucide-react";
+import { ArrowLeft, Lock, Wallet } from "lucide-react";
 import { requireAdmin } from "@/lib/session";
 import { requireModulePage } from "@/lib/modules";
 import { getPurchase } from "@/lib/repos/purchases";
@@ -8,6 +8,7 @@ import { getFiscalYearByLabel } from "@/lib/repos/fiscal";
 import { listItems } from "@/lib/repos/items";
 import { listSuppliers } from "@/lib/repos/suppliers";
 import { adFromIso, bsFromDbText, bsToDbText, fiscalYearOf, toBS } from "@/lib/bs";
+import { formatPaisa } from "@/lib/money";
 import { PageShell } from "@/components/app/page-shell";
 import {
   PurchaseForm,
@@ -99,6 +100,11 @@ export default async function EditPurchasePage({
   };
 
   const lockedCount = initial.lines.filter((l) => l.locked).length;
+  // Paid as it was entered (0023). The edit leaves it alone; it is paid or
+  // undone from Payables, where every payment lives.
+  const paidPaisa = p.payments
+    .filter((x) => !x.voided)
+    .reduce((s, x) => s + x.amountPaisa, 0);
 
   return (
     <PageShell title={title} actions={back}>
@@ -110,6 +116,20 @@ export default async function EditPurchasePage({
             stock that has already been sold, returned or counted. Those lines
             keep their item and cannot be removed, and their quantity cannot go
             below what has already left the shelf. Everything else can change.
+          </span>
+        </p>
+      )}
+      {paidPaisa > 0 && (
+        <p className="mb-4 flex items-start gap-2 rounded-[10px] border border-line bg-cream-50 px-4 py-3 text-[13px] text-sage-700">
+          <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-sage-500" />
+          <span>
+            {formatPaisa(paidPaisa)} was paid when this purchase was entered.
+            Changing the purchase does not change that payment — undo it from{" "}
+            <Link href="/payables" className="underline underline-offset-2">
+              Payables
+            </Link>{" "}
+            if it was wrong. If you change the supplier, the payment moves to
+            the new supplier with the bill.
           </span>
         </p>
       )}

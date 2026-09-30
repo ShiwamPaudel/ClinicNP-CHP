@@ -7,6 +7,7 @@ import { getPurchase } from "@/lib/repos/purchases";
 import { formatPaisa } from "@/lib/money";
 import { expiryForPrint } from "@/lib/print-batches";
 import { adFromIso, formatBS, toBS } from "@/lib/bs";
+import { payableMethodLabel } from "@/lib/payables";
 import { PageShell } from "@/components/app/page-shell";
 import { Table, THead, TR, TH, TD } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,11 @@ export default async function PurchaseDetailPage({
   if (!p) notFound();
 
   const title = p.purchaseNo ? `Purchase ${p.purchaseNo}` : "Purchase";
+  // What was handed over as it was entered (0023). An undone payment is
+  // listed but does not count.
+  const livePayments = p.payments.filter((x) => !x.voided);
+  const paidPaisa = livePayments.reduce((s, x) => s + x.amountPaisa, 0);
+  const undone = p.payments.filter((x) => x.voided);
 
   return (
     <PageShell
@@ -167,6 +173,42 @@ export default async function PurchaseDetailPage({
             {formatPaisa(p.totalPaisa)}
           </span>
         </div>
+        <Row
+          label="Paid when entered"
+          value={
+            paidPaisa > 0
+              ? `${formatPaisa(paidPaisa, false)} · ${livePayments
+                  .map((x) => payableMethodLabel(x.method))
+                  .join(", ")}`
+              : "—"
+          }
+        />
+        <Row
+          label="Left on credit"
+          value={formatPaisa(Math.max(0, p.totalPaisa - paidPaisa), false)}
+        />
+        {undone.length > 0 && (
+          <p className="max-w-[320px] text-right text-[12px] text-sage-500">
+            {undone
+              .map((x) => `${formatPaisa(x.amountPaisa)} paid with it was undone`)
+              .join("; ")}
+            .
+          </p>
+        )}
+        <p className="max-w-[320px] text-right text-[12px] text-sage-500">
+          Payments made later are on the{" "}
+          <Link
+            href={`/suppliers/${p.supplierId}`}
+            className="underline-offset-2 hover:underline"
+          >
+            supplier&apos;s ledger
+          </Link>{" "}
+          and in{" "}
+          <Link href="/payables" className="underline-offset-2 hover:underline">
+            Payables
+          </Link>
+          .
+        </p>
       </section>
 
       {p.lastEdit && (

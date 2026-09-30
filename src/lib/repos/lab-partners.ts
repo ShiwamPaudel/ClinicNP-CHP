@@ -118,7 +118,8 @@ export async function partnerBalancePaisa(partnerId: string): Promise<number> {
     args: [partnerId],
   });
   const paid = await db().execute({
-    sql: "SELECT COALESCE(SUM(amount_paisa), 0) AS n FROM lab_partner_payments WHERE lab_partner_id = ?",
+    // A payment undone as a mistake (0023) no longer counts.
+    sql: "SELECT COALESCE(SUM(amount_paisa), 0) AS n FROM lab_partner_payments WHERE lab_partner_id = ? AND voided_at IS NULL",
     args: [partnerId],
   });
   return Number(sent.rows[0]!.n) - Number(paid.rows[0]!.n);

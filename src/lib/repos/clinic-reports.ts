@@ -197,7 +197,7 @@ async function openingBalance(partnerId: string, fromIso: string): Promise<numbe
   const paid = await db().execute({
     sql: `SELECT COALESCE(SUM(amount_paisa), 0) AS n
             FROM lab_partner_payments
-           WHERE lab_partner_id = ? AND date_ad < ?`,
+           WHERE lab_partner_id = ? AND date_ad < ? AND voided_at IS NULL`,
     args: [partnerId, fromIso],
   });
   return Number(sent.rows[0]!.n) - Number(paid.rows[0]!.n);
@@ -232,6 +232,7 @@ export async function partnerStatement(
     sql: `SELECT date_bs, date_ad, amount_paisa, method, note
             FROM lab_partner_payments
            WHERE lab_partner_id = ? AND date_ad BETWEEN ? AND ?
+             AND voided_at IS NULL
            ORDER BY date_ad ASC, rowid ASC`,
     args: [partnerId, range.fromIso, range.toIso],
   });
@@ -316,14 +317,14 @@ export async function partnerSummary(range: AdRange): Promise<PartnerSummaryRow[
                             WHERE sl.lab_partner_id = p.id AND b.status = 'saved'
                               AND b.date_ad BETWEEN ? AND ?), 0) AS billed,
                  COALESCE((SELECT SUM(amount_paisa) FROM lab_partner_payments lp
-                            WHERE lp.lab_partner_id = p.id
+                            WHERE lp.lab_partner_id = p.id AND lp.voided_at IS NULL
                               AND lp.date_ad BETWEEN ? AND ?), 0) AS payments,
                  COALESCE((SELECT SUM(sl.partner_cost_paisa * ${NET_QTY})
                              FROM bill_service_lines sl
                              JOIN bills b ON b.id = sl.bill_id
                             WHERE sl.lab_partner_id = p.id AND b.status = 'saved'), 0)
                  - COALESCE((SELECT SUM(amount_paisa) FROM lab_partner_payments lp
-                              WHERE lp.lab_partner_id = p.id), 0) AS balance
+                              WHERE lp.lab_partner_id = p.id AND lp.voided_at IS NULL), 0) AS balance
             FROM lab_partners p
            ORDER BY p.name ASC`,
     args: [

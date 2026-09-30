@@ -18,6 +18,7 @@ import {
   Stethoscope,
   FlaskConical,
   HandCoins,
+  Banknote,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Role } from "@/lib/repos/users";
@@ -88,6 +89,9 @@ const GROUPS: NavGroup[] = [
       // Medicine and services both go on dues, so it sits with Bills rather
       // than inside either module's group.
       { href: "/dues", label: "Dues", icon: HandCoins },
+      // What the clinic owes suppliers and laboratories — the other side of
+      // Dues, so it sits beside it. Owner only, like Suppliers.
+      { href: "/payables", label: "Payables", icon: Banknote, adminOnly: true },
       { href: "/reports", label: "Reports", icon: BarChart3 },
       { href: "/settings/company", label: "Settings", icon: Settings, adminOnly: true },
     ],

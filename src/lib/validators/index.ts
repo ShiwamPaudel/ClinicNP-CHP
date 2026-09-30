@@ -96,6 +96,13 @@ export const supplierPaymentSchema = z.object({
   note: z.string(),
 });
 
+/** Undoing a payment to a supplier or a laboratory entered by mistake (0023). */
+export const paymentVoidSchema = z.object({
+  kind: z.enum(["supplier", "lab"]),
+  paymentId: z.string().min(1),
+  reason: z.string().trim().min(1, "Say why this payment is being undone"),
+});
+
 export const purchaseLineSchema = z
   .object({
     itemId: z.string().min(1),
@@ -123,6 +130,19 @@ export const purchaseLineSchema = z
     message: "A medicine cannot expire before it was manufactured. Check the dates.",
   });
 
+/** How a supplier or a laboratory can be paid. */
+export const PAYABLE_METHODS = ["cash", "bank", "cheque", "qr"] as const;
+
+export const purchasePaymentSchema = z
+  .object({
+    mode: z.enum(["credit", "full", "part"]),
+    amountPaisa: z.number().int().min(0).default(0),
+    method: z.enum(PAYABLE_METHODS).default("cash"),
+  })
+  .refine((p) => p.mode !== "part" || p.amountPaisa > 0, {
+    message: "Enter how much was paid, or choose \"On credit\"",
+  });
+
 export const purchaseSchema = z.object({
   supplierId: z.string().min(1, "Choose a supplier"),
   supplierInvoiceNo: z.string(),
@@ -138,6 +158,10 @@ export const purchaseSchema = z.object({
     .max(1000, "Rounding that big is not rounding")
     .default(0),
   lines: z.array(purchaseLineSchema).min(1, "Add at least one item"),
+  // What was paid as the purchase was entered (0023). Absent is "on credit",
+  // what every purchase was before, so an older form saves exactly as it did.
+  // Only a new purchase reads it; an edit leaves its payments alone.
+  payment: purchasePaymentSchema.optional(),
 });
 export type PurchaseFormInput = z.infer<typeof purchaseSchema>;
 

@@ -16,6 +16,8 @@ const ACTION_LABEL: Record<string, string> = {
   "dues.voided": "Dues payment undone",
   "stock_out.recorded": "Stock taken out",
   purchase_edit: "Purchase changed",
+  "supplier.payment": "Supplier paid",
+  "supplier.payment_voided": "Supplier payment undone",
   restore: "Everything restored from a backup",
   "fiscal_year.closed": "Year closed",
 
@@ -40,6 +42,7 @@ const ACTION_LABEL: Record<string, string> = {
   "lab_partner.created": "Laboratory added",
   "lab_partner.updated": "Laboratory details changed",
   "lab_partner.payment": "Laboratory paid",
+  "lab_partner.payment_voided": "Laboratory payment undone",
 
   // the shape of the product
   "modules.changed": "Modules switched on or off",

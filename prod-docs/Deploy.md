@@ -291,6 +291,21 @@ Nothing to migrate. Two things to know about the deploy:
   runtime and the OpenCV chunk — and then it is cached. Later reads are a few
   seconds. Worth knowing before somebody tries it on a phone on mobile data.
 
+## 0023 payables — already applied
+
+`0023_payables.sql` adds `purchase_id`, `voided_at`, `voided_by` and
+`void_reason` to `supplier_payments`, the three void columns to
+`lab_partner_payments`, and two indexes. Additive with defaults: the code
+deployed before it reads none of them, so it could go first.
+
+**Applied to production on 2083-06-14** (C-029), after a copy of the payment,
+purchase, supplier and laboratory tables was written to
+`backups/prod-before-0023-payables-*.json` (gitignored): 9 statements, row
+counts identical before and after. Deploying the code that uses it is only:
+
+    pnpm db:check            # "schema is up to date (23 migrations)"
+    git push                 # Vercel builds; db:check lets it through
+
 ## 0022 purchase line selling rate — already applied
 
 `0022_purchase_line_selling_rate.sql` adds one column to `purchase_lines`

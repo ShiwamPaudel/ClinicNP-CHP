@@ -108,13 +108,14 @@ export async function recordSupplierPayment(input: {
   method: string;
   note: string;
   userId: string;
-}): Promise<void> {
+}): Promise<string> {
+  const id = ulid();
   await db().execute({
     sql: `INSERT INTO supplier_payments
             (id, supplier_id, date_ad, date_bs, amount_paisa, method, note, user_id, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
-      ulid(),
+      id,
       input.supplierId,
       input.dateAd,
       input.dateBs,
@@ -125,6 +126,7 @@ export async function recordSupplierPayment(input: {
       new Date().toISOString(),
     ],
   });
+  return id;
 }
 
 export interface LedgerEntry {
@@ -177,9 +179,10 @@ export async function supplierLedger(supplierId: string): Promise<{
     });
   }
 
+  // A payment undone as a mistake (0023) stays on file but no longer counts.
   const payments = await db().execute({
     sql: `SELECT date_ad, date_bs, amount_paisa, method
-          FROM supplier_payments WHERE supplier_id = ?`,
+          FROM supplier_payments WHERE supplier_id = ? AND voided_at IS NULL`,
     args: [supplierId],
   });
   for (const p of payments.rows) {

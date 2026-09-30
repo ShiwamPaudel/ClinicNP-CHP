@@ -128,11 +128,24 @@ export async function createPurchaseAction(input: unknown): Promise<ActionResult
       roundingPaisa: d.roundingPaisa,
       lines,
       userId: user.id,
+      // "On credit" is no payment at all, exactly as before (0023).
+      payment:
+        d.payment && d.payment.mode !== "credit"
+          ? {
+              mode: d.payment.mode,
+              amountPaisa: d.payment.amountPaisa,
+              method: d.payment.method,
+            }
+          : undefined,
     });
 
     revalidatePath("/purchases");
     revalidatePath("/stock");
     revalidatePath("/items");
+    if (res.paidPaisa > 0) {
+      revalidatePath("/payables");
+      revalidatePath(`/suppliers/${d.supplierId}`);
+    }
     return { ok: true, id: res.id, purchaseNo: res.purchaseNo };
   } catch (err) {
     return handle(err);
@@ -202,6 +215,7 @@ export async function updatePurchaseAction(input: unknown): Promise<ActionResult
     revalidatePath("/items");
     revalidatePath("/reports/purchase-register");
     revalidatePath(`/suppliers/${d.supplierId}`);
+    revalidatePath("/payables");
     return { ok: true, id: d.purchaseId };
   } catch (err) {
     return handle(err);
@@ -230,6 +244,7 @@ export async function createPurchaseReturnAction(
     revalidatePath("/purchases");
     revalidatePath("/stock");
     revalidatePath(`/suppliers/${d.supplierId}`);
+    revalidatePath("/payables");
     return { ok: true, id };
   } catch (err) {
     return handle(err);

@@ -17,6 +17,7 @@ import {
   Paperclip,
   PieChart,
   MapPin,
+  Banknote,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { requireUser } from "@/lib/session";
@@ -55,6 +56,7 @@ const REPORTS: ReportCard[] = [
   { href: "/reports/vat", label: "VAT report", desc: "Sales and purchase VAT summary", icon: Percent, adminOnly: true, vatOnly: true },
   { href: "/suppliers", label: "Party ledgers", desc: "Per-supplier statements", icon: Users, adminOnly: true, pharmacyOnly: true },
   { href: "/dues", label: "Dues", desc: "Who owes what, and for how long", icon: HandCoins },
+  { href: "/payables", label: "Payables", desc: "What is owed to suppliers and laboratories", icon: Banknote, adminOnly: true },
 ];
 
 export default async function ReportsHubPage() {

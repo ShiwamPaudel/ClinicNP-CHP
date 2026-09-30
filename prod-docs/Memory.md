@@ -23,7 +23,7 @@
 
 *Last rewritten 2083-05-26 (C-014); production figures re-read 2083-06-06 (C-016). Everything below is verified against production, not remembered.*
 
-> **This install's database is new and open for business.** Checked 2083-06-09 against `clinicnpforchp-clinicnpforchp.aws-ap-south-1.turso.io`: **22 migrations** applied (ends at `0022_purchase_line_selling_rate.sql`, applied 2083-06-14 in C-028), company row set with PAN and both modules on, fiscal year **2083/84 open**, one admin user, the clinic's **letterhead set**, and **6,646 items and 14,187 units**. Sign-in verified end to end against a running server. **The clinic is now trading** (2083-06-10: 2 bills, 2 patients, 2 purchases, 4 batches), has entered its own doctors, groups, one laboratory partner and its OPD/USG services, and carries **245 laboratory tests at rate 0**. Prices, opening stock and the rest of the services are still the clinic's to enter. **Still the owner's:** 🔴 the admin account was bootstrapped with a deliberately weak password — eight repeated digits, chosen only to clear the length guard — and it must be replaced before the clinic is reachable from outside. (Rule 7: the value is not written here.) Then connect a private Blob store (Deploy.md, "The storage has to be a private store"); until a *Nightly* row with *Download* appears, nothing is backed up on its own.
+> **This install's database is new and open for business.** Checked 2083-06-09 against `clinicnpforchp-clinicnpforchp.aws-ap-south-1.turso.io`: **23 migrations** applied (ends at `0023_payables.sql`, applied 2083-06-14 in C-029; `0022_purchase_line_selling_rate.sql` the same day in C-028), company row set with PAN and both modules on, fiscal year **2083/84 open**, one admin user, the clinic's **letterhead set**, and **6,646 items and 14,187 units**. Sign-in verified end to end against a running server. **The clinic is now trading** (2083-06-10: 2 bills, 2 patients, 2 purchases, 4 batches), has entered its own doctors, groups, one laboratory partner and its OPD/USG services, and carries **245 laboratory tests at rate 0**. Prices, opening stock and the rest of the services are still the clinic's to enter. **Still the owner's:** 🔴 the admin account was bootstrapped with a deliberately weak password — eight repeated digits, chosen only to clear the length guard — and it must be replaced before the clinic is reachable from outside. (Rule 7: the value is not written here.) Then connect a private Blob store (Deploy.md, "The storage has to be a private store"); until a *Nightly* row with *Download* appears, nothing is backed up on its own.
 >
 > The figures in the paragraph above replaced the previous install's, which had run 0021 with 16 `backups` rows. **The code is unchanged and still at the same maturity**; what reset is the data.
 
@@ -276,6 +276,10 @@
 | D-148 | **A saved purchase can be edited, behind the signed-in admin's password, guarded by the stock it already put on the shelf** (C-028) — reverses C-027's read-only stance at the owner's request | Quantity may rise freely and fall only to what has already left the shelf; a line whose batch has moved (sold, returned, counted) keeps its item and cannot be removed; the date stays in the purchase's fiscal year and a closed year cannot be edited. Stock corrections are *appended* as `adjustment` moves pointing back at the purchase — never written over the original `purchase` move — and a removed line's batch is emptied and kept. The whole change and an audit entry with before and after commit together. The password is checked at the moment of the write, not when the screen opens, so there is no unlocked state to leave on a shared machine; wrong attempts are throttled on their own bucket so they cannot lock anybody out of signing in |
 | D-149 | **The selling price is typed on the purchase row and updates the item's price for that unit; a copy is kept on the line** (`0022`) | `item_units.selling_rate_paisa` stays the one place a price lives — every batch of an item sells at one price. The line copy is only a record, so a purchase can say later what price was set on it. On an edit, the item's price is updated only where the line's price was changed *in that edit*: re-saving an old purchase for an unrelated fix must not put its recorded price back onto an item whose price has moved on since |
 | D-150 | **A typed date's year decides its calendar: 2060 and up is Nepali, below is English** | People copy these dates off paper, and a pack prints English while a Nepali bill prints Nepali. Reading typed text in the shop's one setting got both wrong in turn — on a Nepali-set shop `2028-01-31` off a pack was saved as 14 May 1971; on an English-set one `2083-06-13` off a bill was refused. BS runs ~57 years ahead, so no real purchase or expiry date falls on the wrong side of 2060 (AD 2060 is further out than any expiry; BS 2059 is AD 2002). The setting still decides how dates are shown |
+| D-151 | **A purchase can be paid for as it is entered — on credit, in full, or in part — and what was paid is an ordinary supplier payment** (`0023`, C-029) | The owner asked for it: big bills get paid in part. The supplier's balance was already purchases − returns − payments, so a payment row in that same table is all it takes, written in the same atomic batch as the purchase. "On credit" writes nothing, which is exactly what every purchase was before. *Paid in full* pays the total the server works out, never a figure from the browser; a part payment above the bill is refused (a typo far more often than an advance, and an advance can still be paid on purpose from Payables). `supplier_payments.purchase_id` only records which purchase a payment came with |
+| D-152 | **Payments reduce the supplier's overall balance; they are not allocated to bills** | The owner's choice, over per-bill Paid/Left. A purchase shows what was paid *when it was entered* and what that left on credit; later payments live on the supplier's ledger and in Payables. If a purchase's supplier is corrected, the payment made with it moves along — otherwise one supplier shows paid and the other owed for the same invoice |
+| D-153 | **Payables is one screen for everyone the clinic owes — suppliers and laboratories — beside Dues, owner only** | The mirror of Dues. Each half shows only while its module is on. Its figures are *read from* the supplier ledger and the laboratory statement's "owed now" (refunds netted), never kept separately, so the three screens cannot disagree. The existing payment boxes on a supplier's page and on a laboratory statement stay as they were. Sidebar (admin): Bills · Dues / Payables · Reports / Settings |
+| D-154 | **A payment to a supplier or laboratory typed wrong is undone with a reason, never deleted** (`0023`) | The dues rule (0019) applied to the other direction: `voided_at` / `voided_by` / `void_reason`; the row stays, marked, and stops counting in every balance, statement and opening balance. Refused once the payment's fiscal year is closed (D-029). Supplier payments made on their own also gained the closed-year refusal and an audit entry, which laboratory payments already had |
 
 *(Add D-036+ as they happen. Assumptions use the `ASSUMPTION:` prefix.)*
 
@@ -1043,3 +1047,57 @@ day of BS 2080–2090 in UTC, Kathmandu and Los Angeles.
 **Left as it was, on purpose:** the manufacture date is not on the purchase
 form, so an edit leaves each batch's `mfg_date_ad` untouched rather than
 clearing it.
+
+### C-029  ·  2083-06-14  ·  Paying suppliers and laboratories: at purchase entry, later, and undoing a mistake
+
+**Asked:** a purchase is cash or credit, but big bills are paid in part; record
+that, handle laboratory payables the same way, and add supplier payment
+recording if it was missing. **Found first:** supplier payments already existed
+(a box on each supplier's page) and so did laboratory payments (on the
+laboratory statement) — but a purchase had no way to say anything was paid, so
+every purchase went wholly onto the supplier's balance. Live had 0 supplier and
+0 laboratory payments. The owner chose: overall balance rather than per-bill
+allocation (D-152), a Payables page (D-153), undo with a reason (D-154), and
+back up then migrate now.
+
+**Purchase entry (D-151).** Under *Net total*, a *Payment* block: On credit ·
+Paid in full · Part paid, with *Paid now* and *How* (cash, bank, cheque, QR),
+then *Paid now* / *On credit* figures. New purchases only; the edit screen says
+what was paid with it and leaves it alone. The purchase page shows *Paid when
+entered* and *Left on credit*.
+
+**Payables (`/payables`).** Two tiles (owed to suppliers, owed to
+laboratories), a table of each with *Pay* and a link to the ledger or
+statement, and *Payments made* — both kinds, newest first, purchase-linked ones
+linking back to the purchase, undone ones struck through with who and why. Pay
+warns, not refuses, when the amount is more than is owed. Also a card on the
+Reports hub.
+
+**Undone payments drop out everywhere they are read** — the supplier ledger,
+`partnerBalancePaisa`, the laboratory summary, statement and its opening
+balance. Every query that sums either payment table was found by grep and
+changed; `backup.ts` needed nothing (it copies whole rows, and restores in an
+order where `purchase_id`'s target already exists).
+
+**Caught by the tests:** the payments list first sorted a `UNION ALL` by a
+column SQLite would not match inside a compound SELECT — it would have been the
+Payables page's error overlay. Now sorted from outside.
+
+**Tests.** 15 integration tests in `payables.integration.test.ts`; every
+refusal is followed by a byte-for-byte unchanged check, and Payables is checked
+to equal the supplier ledger for every supplier, returns included. A mutation
+check proved they bite (removing the undone filter, and the over-the-bill
+guard, each failed its test). 33 browser checks on a throwaway local database
+(dev server pointed at it by environment override), plus screenshots read at
+desktop and phone width. **551 tests across 45 files**, typecheck clean.
+
+**Production.** Backed up `supplier_payments`, `lab_partner_payments`,
+`purchases`, `suppliers`, `lab_partners`, `purchase_returns` and `_migrations`
+to `backups/prod-before-0023-payables-*.json` (gitignored), then applied `0023`:
+9 statements, row counts identical, `db:check` "up to date (23 migrations)".
+Nothing else on production was written.
+
+**Noticed, left alone:** Settings → Lab partners shows a balance from
+`partnerBalancePaisa`, which counts tests before refunds, while the laboratory
+statement (and so Payables) nets refunds out. They differ only after a
+laboratory test is refunded. Pre-existing; not changed without being asked.

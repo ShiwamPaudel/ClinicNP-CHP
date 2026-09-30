@@ -18,6 +18,7 @@ import {
 import { toPaisa, formatPaisa, vatOf } from "@/lib/money";
 import { clampPercent, resolveBillDiscount, type DiscountMode } from "@/lib/discount";
 import { bsToDbText, today } from "@/lib/bs";
+import { PAYABLE_METHOD_LABEL } from "@/lib/payables";
 import type { Draft } from "@/lib/invoice-read/draft";
 import type { Item } from "@/lib/repos/items";
 import type { Supplier } from "@/lib/repos/suppliers";
@@ -133,6 +134,12 @@ export function PurchaseForm({
   // What a photo said the bill came to, kept only so the form can say whether
   // the two agree. It is never what gets saved — the lines are.
   const [billNetTotalPaisa, setBillNetTotalPaisa] = useState<number | null>(null);
+  // New purchase only: what was handed over with it (0023). "On credit" —
+  // nothing paid — is where it starts, which is what every purchase was
+  // before this existed.
+  const [payMode, setPayMode] = useState<PayMode>("credit");
+  const [paidRupees, setPaidRupees] = useState("");
+  const [payMethod, setPayMethod] = useState<PayMethod>("cash");
 
   const itemsById = useMemo(
     () => new Map(items.map((i) => [i.id, i])),
@@ -235,6 +242,14 @@ export function PurchaseForm({
     roundingRupees,
   ]);
 
+  /** What is being paid now, as the form reads it. */
+  const paidNowPaisa =
+    payMode === "full"
+      ? Math.max(0, totals.total)
+      : payMode === "part"
+        ? toPaisa(Number(paidRupees) || 0)
+        : 0;
+
   /** Lines a photo filled in but could not find a medicine for. */
   const unmatched = lines.filter((l) => l.printedName && !l.itemId).length;
 
@@ -277,8 +292,25 @@ export function PurchaseForm({
       setConfirmOpen(true);
       return;
     }
+    if (payMode === "part") {
+      if (!(Number(paidRupees) > 0)) {
+        toast.error("Enter how much was paid, or choose On credit.");
+        return;
+      }
+      if (paidNowPaisa > totals.total) {
+        toast.error("The amount paid is more than the bill. Choose Paid in full, or check the amount.");
+        return;
+      }
+    }
     setBusy(true);
-    const res = await createPurchaseAction(payload());
+    const res = await createPurchaseAction({
+      ...payload(),
+      payment: {
+        mode: payMode,
+        amountPaisa: payMode === "part" ? paidNowPaisa : 0,
+        method: payMethod,
+      },
+    });
     setBusy(false);
     if (res.ok) {
       toast.success(`Purchase saved (${res.purchaseNo})`);
@@ -723,6 +755,88 @@ export function PurchaseForm({
             )}
           </p>
         )}
+        {/* What was paid for it now. Only on a new purchase: once saved, a
+            payment is its own record, paid or undone from Payables. */}
+        {!editing && (
+          <div className="flex w-full flex-col items-end gap-1.5 border-t border-line pt-3">
+            <div className="mb-0.5 text-[12px] font-semibold uppercase tracking-wide text-sage-500">
+              Payment
+            </div>
+            <div
+              role="group"
+              aria-label="Payment"
+              className="inline-flex rounded-[8px] border border-line bg-cream-100 p-0.5"
+            >
+              <ModeChip
+                active={payMode === "credit"}
+                onClick={() => setPayMode("credit")}
+                label="On credit"
+              >
+                On credit
+              </ModeChip>
+              <ModeChip
+                active={payMode === "full"}
+                onClick={() => setPayMode("full")}
+                label="Paid in full"
+              >
+                Paid in full
+              </ModeChip>
+              <ModeChip
+                active={payMode === "part"}
+                onClick={() => setPayMode("part")}
+                label="Part paid"
+              >
+                Part paid
+              </ModeChip>
+            </div>
+            {payMode === "part" && (
+              <div className="flex items-center gap-2">
+                <span className="whitespace-nowrap text-[14px] text-sage-700">Paid now (रू)</span>
+                <Input
+                  numeric
+                  inputMode="decimal"
+                  className="w-28 text-right"
+                  aria-label="Paid now, rupees"
+                  value={paidRupees}
+                  onChange={(e) => setPaidRupees(e.target.value)}
+                />
+              </div>
+            )}
+            {payMode !== "credit" && (
+              <div className="flex items-center gap-2">
+                <span className="text-[14px] text-sage-700">How</span>
+                <Select
+                  className="w-44"
+                  aria-label="How it was paid"
+                  value={payMethod}
+                  onChange={(e) => setPayMethod(e.target.value as PayMethod)}
+                >
+                  {PAY_METHODS.map((m) => (
+                    <option key={m} value={m}>
+                      {PAYABLE_METHOD_LABEL[m]}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
+            <Row label="Paid now" value={formatPaisa(paidNowPaisa)} />
+            <Row
+              label="On credit"
+              value={formatPaisa(Math.max(0, totals.total - paidNowPaisa))}
+            />
+            {payMode === "part" && paidNowPaisa > totals.total && (
+              <p className="max-w-[320px] text-right text-[12px] font-medium text-danger-600">
+                That is more than the bill. Choose Paid in full, or check the
+                amount.
+              </p>
+            )}
+            <p className="max-w-[320px] text-right text-[12px] text-sage-500">
+              What is on credit is added to what the supplier is owed. Pay the
+              rest later from Payables.
+            </p>
+          </div>
+        )}
+
         <div className="mt-2 flex gap-2">
           <Button
             variant="secondary"
@@ -797,6 +911,10 @@ export function PurchaseForm({
     </div>
   );
 }
+
+type PayMode = "credit" | "full" | "part";
+const PAY_METHODS = ["cash", "bank", "cheque", "qr"] as const;
+type PayMethod = (typeof PAY_METHODS)[number];
 
 function ModeChip({
   active,

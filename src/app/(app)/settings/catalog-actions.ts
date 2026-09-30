@@ -347,6 +347,7 @@ export async function recordPartnerPaymentAction(input: {
     });
 
     revalidatePath("/reports/lab-partners");
+    revalidatePath("/payables");
     return OK;
   } catch (err) {
     return handle(err);
