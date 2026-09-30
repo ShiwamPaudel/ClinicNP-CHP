@@ -23,7 +23,7 @@
 
 *Last rewritten 2083-05-26 (C-014); production figures re-read 2083-06-06 (C-016). Everything below is verified against production, not remembered.*
 
-> **This install's database is new and open for business.** Checked 2083-06-09 against `clinicnpforchp-clinicnpforchp.aws-ap-south-1.turso.io`: **23 migrations** applied (ends at `0023_payables.sql`, applied 2083-06-14 in C-029; `0022_purchase_line_selling_rate.sql` the same day in C-028), company row set with PAN and both modules on, fiscal year **2083/84 open**, one admin user, the clinic's **letterhead set**, and **6,646 items and 14,187 units**. Sign-in verified end to end against a running server. **The clinic is now trading** (2083-06-10: 2 bills, 2 patients, 2 purchases, 4 batches), has entered its own doctors, groups, one laboratory partner and its OPD/USG services, and carries **245 laboratory tests at rate 0**. Prices, opening stock and the rest of the services are still the clinic's to enter. **Still the owner's:** 🔴 the admin account was bootstrapped with a deliberately weak password — eight repeated digits, chosen only to clear the length guard — and it must be replaced before the clinic is reachable from outside. (Rule 7: the value is not written here.) Then connect a private Blob store (Deploy.md, "The storage has to be a private store"); until a *Nightly* row with *Download* appears, nothing is backed up on its own.
+> **This install's database is new and open for business.** Checked 2083-06-09 against `clinicnpforchp-clinicnpforchp.aws-ap-south-1.turso.io`: **23 migrations** applied (ends at `0023_payables.sql`, applied 2083-06-14 in C-029; `0022_purchase_line_selling_rate.sql` the same day in C-028), company row set with PAN and both modules on, fiscal year **2083/84 open**, one admin user, the clinic's **letterhead set**, and **6,646 items and 14,187 units**. Sign-in verified end to end against a running server. **Its trial entries were cleared on 2083-06-14** (C-030): every purchase, purchase return, bill, batch, stock move and supplier payment — so **there is no stock on the shelf** until purchases or opening stock are entered — and purchase and invoice numbering restarted at 1. Everything the clinic set up was kept, has entered its own doctors, groups, one laboratory partner and its OPD/USG services, and carries **245 laboratory tests at rate 0**. Prices, opening stock and the rest of the services are still the clinic's to enter. **Still the owner's:** 🔴 the admin account was bootstrapped with a deliberately weak password — eight repeated digits, chosen only to clear the length guard — and it must be replaced before the clinic is reachable from outside. (Rule 7: the value is not written here.) Then connect a private Blob store (Deploy.md, "The storage has to be a private store"); until a *Nightly* row with *Download* appears, nothing is backed up on its own.
 >
 > The figures in the paragraph above replaced the previous install's, which had run 0021 with 16 `backups` rows. **The code is unchanged and still at the same maturity**; what reset is the data.
 
@@ -1101,3 +1101,31 @@ Nothing else on production was written.
 `partnerBalancePaisa`, which counts tests before refunds, while the laboratory
 statement (and so Payables) nets refunds out. They differ only after a
 laboratory test is refunded. Pre-existing; not changed without being asked.
+
+### C-030  ·  2083-06-14  ·  Trial purchases and bills cleared from production
+
+**Asked:** clear the purchase entries and the bills, keep everything else the
+clinic entered. **On live before:** 6 purchases (12 lines, 12 batches — all the
+stock there was; no opening stock), 2 purchase returns, 3 bills (#1 and #2
+medicine, #3 a CBC sent to NOVUS), 16 stock moves, 4 supplier payments to
+OMEGA DRUG CENTER. **The owner chose:** all 3 bills (so invoice numbering could
+restart cleanly), all 4 payments (they were against the purchases being
+cleared; keeping them would have left OMEGA रू 3,089 "paid ahead"), and restart
+purchase and invoice numbering at 1.
+
+**How.** A full backup of every table first (43 tables, 21,317 rows,
+`backups/prod-before-clear-trading-*.json`, gitignored, read back). Then one
+write transaction that refused to start unless every row count and both
+counters were exactly what the owner had been shown; deleted children before
+parents; reset `next_purchase_no` and `next_invoice_no` to 1 (guarded on 7
+and 4); wrote a `trading.cleared` audit entry; and before committing checked
+that every cleared table was empty, every kept table's count unchanged, and
+`PRAGMA foreign_key_check` clean. Run once as a dry run (rolled back), then
+committed, then re-read independently.
+
+**Kept, untouched:** items and units (prices included — the three set on
+purchase lines stay, they are item data), suppliers, doctors, 15 patients,
+3 visits (all already cancelled), 7 appointments, 251 services, the
+laboratory, racks, users, company, the audit log, and the patient and visit
+counters (next patient 16, next visit 4 — only purchases and invoices were
+asked about).

@@ -19,6 +19,7 @@ const ACTION_LABEL: Record<string, string> = {
   "supplier.payment": "Supplier paid",
   "supplier.payment_voided": "Supplier payment undone",
   restore: "Everything restored from a backup",
+  "trading.cleared": "Test purchases and bills cleared",
   "fiscal_year.closed": "Year closed",
 
   // people
