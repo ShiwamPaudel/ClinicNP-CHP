@@ -7,7 +7,7 @@
 import { create } from "zustand";
 import { ulid } from "ulid";
 import type { PosItem, PosService } from "@/lib/pos-types";
-import type { HeldLine } from "@/lib/pos-types";
+import type { HeldLine, HeldServiceLine } from "@/lib/pos-types";
 import {
   defaultUnit,
   unitByLevel,
@@ -95,6 +95,14 @@ interface BillState {
   setBillDiscountPercent: (percent: number) => void;
   reset: () => void;
   loadLines: (lines: BillLine[], patientName: string) => void;
+  /** Put a held bill back whole: its medicines, services and patient. */
+  loadHeld: (held: {
+    lines: BillLine[];
+    serviceLines: ServiceLine[];
+    patient: AttachedPatient | null;
+    visitId: string | null;
+    patientName: string;
+  }) => void;
 }
 
 function makeLine(item: PosItem): BillLine {
@@ -324,6 +332,21 @@ export const useBillStore = create<BillState>((set) => ({
       activeLineId: null,
     }),
 
+  loadHeld: (h) =>
+    set({
+      lines: h.lines,
+      serviceLines: h.serviceLines,
+      patient: h.patient,
+      visitId: h.visitId,
+      patientName: h.patientName,
+      paymentMethod: "cash",
+      tenderedPaisa: 0,
+      paidNowPaisa: 0,
+      paidNowMethod: "cash",
+      billDiscountPaisa: 0,
+      billDiscountPercent: 0,
+      activeLineId: h.lines[h.lines.length - 1]?.lineId ?? null,
+    }),
   loadLines: (lines, patientName) =>
     set({
       lines,
@@ -337,6 +360,35 @@ export const useBillStore = create<BillState>((set) => ({
       activeLineId: lines[lines.length - 1]?.lineId ?? null,
     }),
 }));
+
+/**
+ * Rebuild service lines from a held bill against the current catalog. The name
+ * and VAT flag come from the catalog; everything the person set on the line —
+ * quantity, rate, discount, doctor, laboratory, follow-up — comes back as held.
+ */
+export function serviceLinesFromHeld(
+  held: HeldServiceLine[],
+  services: PosService[],
+): ServiceLine[] {
+  const byId = new Map(services.map((s) => [s.id, s]));
+  const out: ServiceLine[] = [];
+  for (const h of held) {
+    const svc = byId.get(h.serviceId);
+    if (!svc) continue;
+    out.push({
+      ...makeServiceLine(svc),
+      qty: h.qty,
+      ratePaisa: h.ratePaisa,
+      rateOverridden: h.rateOverridden,
+      discountPaisa: h.discountPaisa,
+      doctorId: h.doctorId,
+      labPartnerId: h.labPartnerId,
+      followupApplied: h.followupApplied,
+      followupNote: h.followupNote,
+    });
+  }
+  return out;
+}
 
 /** Rebuild BillLines from held-bill snapshot lines using the current catalog. */
 export function linesFromHeld(held: HeldLine[], items: PosItem[]): BillLine[] {

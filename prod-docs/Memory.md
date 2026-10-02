@@ -280,6 +280,11 @@
 | D-152 | **Payments reduce the supplier's overall balance; they are not allocated to bills** | The owner's choice, over per-bill Paid/Left. A purchase shows what was paid *when it was entered* and what that left on credit; later payments live on the supplier's ledger and in Payables. If a purchase's supplier is corrected, the payment made with it moves along — otherwise one supplier shows paid and the other owed for the same invoice |
 | D-153 | **Payables is one screen for everyone the clinic owes — suppliers and laboratories — beside Dues, owner only** | The mirror of Dues. Each half shows only while its module is on. Its figures are *read from* the supplier ledger and the laboratory statement's "owed now" (refunds netted), never kept separately, so the three screens cannot disagree. The existing payment boxes on a supplier's page and on a laboratory statement stay as they were. Sidebar (admin): Bills · Dues / Payables · Reports / Settings |
 | D-154 | **A payment to a supplier or laboratory typed wrong is undone with a reason, never deleted** (`0023`) | The dues rule (0019) applied to the other direction: `voided_at` / `voided_by` / `void_reason`; the row stays, marked, and stops counting in every balance, statement and opening balance. Refused once the payment's fiscal year is closed (D-029). Supplier payments made on their own also gained the closed-year refusal and an audit entry, which laboratory payments already had |
+| D-155 | **Every key the counter's shortcut sheet lists is wired, and the sheet lists only keys that are** (C-031) | The owner found F2 ("Start a new bill") did nothing but move the cursor. Walking the sheet key by key found more: `P` and `?` could never fire because the search box always has focus; resuming a held bill brought back its medicines only and deleted the rest; the held tray and the patient search could not be used without a mouse; QR left "Enter to payment" with nowhere to go; the F-keys stayed live behind dialogs (F9 could save from behind the batch picker); and F9 pressed twice queued the bill twice. Now: F1/? help, F2 new bill (asks: hold / clear / keep), F4 or P patient (↑↓ Enter), F7 hold, F8 tray (↑↓ Enter, 1–9, Esc), F9 save once, Alt+1/2/3 Cash/QR/Dues, Esc back to the search, Enter on a line back to the search, U/B/Del on any of a line's boxes. F-keys stand down while a dialog is open |
+| D-156 | **F2 opens New bill from any back-office page, asking first if anything has been typed there** | What the owner expected F2 to do. Leaving a half-entered purchase silently would be the worst way to honour it; typing in a search box does not count as unsaved work. The sidebar's look is unchanged (C-026 asked for Dashboard / New bill to stay exactly as they are) |
+| D-157 | **Resuming a held bill brings back all of it, and never writes over the bill on the counter — that one is held in its place** | Held bills always stored their services and patient (`HeldBill.serviceLines`, `patientId`), but resume only loaded medicines and then deleted the held copy: a held clinic bill lost its consultation and patient for good. The attached patient is now kept whole on the held bill (`attachedPatient`); bills held before that are matched by `patientId` against the counter's patient cache |
+| D-158 | **A new purchase row's expiry starts at today + 4 years, marked as a default until changed** | The owner's instruction. The risk is a default that is never corrected and quietly becomes a real batch's expiry, so the row says "4 years from today — change to the pack's" in warn amber until the date is edited, and the date box selects its whole value on focus so typing replaces it. Rows filled from a photo keep what the bill printed (or empty, D-145) — never the default, which would pass for a date read off the paper |
+| D-159 | **The margin under the sell price is on the selling price — (sell − cost) ÷ sell — and, where free goods or a line discount lower the real unit cost, the margin they give is shown beside it** | Nepal pharmacy margins are quoted on the selling price/MRP ("16% margin"). A blank sell price leaves the item's price as it is, so the margin is worked on that price. "Margin 13.8% · 28.2% with free" for 10 + 2 free at 112.07 against 130 |
 
 *(Add D-036+ as they happen. Assumptions use the `ASSUMPTION:` prefix.)*
 
@@ -1129,3 +1134,52 @@ purchase lines stay, they are item data), suppliers, doctors, 15 patients,
 laboratory, racks, users, company, the audit log, and the patient and visit
 counters (next patient 16, next visit 4 — only purchases and invoices were
 asked about).
+
+### C-031  ·  2083-06-16  ·  Counter shortcuts that work, the purchase margin and default expiry, and a photo that "read nothing"
+
+**Asked:** F2 did not open New bill as the shortcut sheet said; make every
+counter shortcut work; show the margin under the purchase sell price; start a
+row's expiry at four years from today; and why "Fill from a photo" got nothing
+off a Sohan Medicine bill (CASR0001739), with the photo attached.
+
+**The counter (D-155–D-157).** Read every key on the sheet against the code
+rather than trusting it; the list of what was broken is in D-155. The two that
+cost money: resume dropped a held bill's services and patient and then deleted
+it (D-157), and F9/Enter twice queued two bills (a `savingRef` guard; the save
+now also clears its busy state in a `finally`). New `GlobalShortcuts` in the
+back-office layout for F2 anywhere (D-156). The shortcut sheet is rewritten in
+sections and lists only wired keys.
+
+**Purchase row (D-158, D-159).** Default expiry with its amber note; the date
+box selects all on focus (every typable date box — harmless elsewhere, useful
+everywhere); `MarginNote` under the sell price. On wide screens both notes sit
+just under their box so the row's boxes stay in line; the row reserves 16 px for
+them.
+
+**The photo.** Run through the real reader in a real browser on the photo the
+owner sent, then on a production build (`next build` + `next start`, service
+worker active) exactly as live serves it: **it reads the bill — "Read 13 lines"
+in ~15 s, every batch filled**. Also read at 2,400 and 4,000 px to stand in for
+a full-size phone photo: still read. So the reader is not broken for this bill
+on a computer; the "nothing" was specific to where it was tried, which the old
+messages could not say — every failure said "check the connection". Each stage
+now says what failed (photo would not open — e.g. HEIC; reader would not
+download, ~40 MB first time; stopped while reading — usually memory on a
+phone), and the button counts the seconds. **Asked the owner** which message
+they saw and on what device.
+
+**Parser fixes found on this bill**, pinned with its real OCR text as a test
+(`SOHAN` in `invoice-read.test.ts`, 12/12 rows and every closing figure): a row
+broken in two at the expiry is joined back; "do-"/"do -" with the leading dash
+lost is a continuation row; "EREE"/"LFREE" are FREE; the next medicine's name
+read in front of a "- do -" row is carried to the row it names; a FREE row
+whose batch is plainly not the row above's is left out rather than put on the
+wrong medicine; "NEI TOTAL" is the net total; a TOTAL figure lifted onto the
+line above its label is still read. Before: 13 rows, three wrong (Calin lost,
+its free row read as a paid line at MRP, Anomycetin's name on Clavam). The new
+tests fail against the old parser.
+
+**Checked:** 35 browser checks on a throwaway local database (every key above,
+F9 ×3 saving one bill, F9 behind two dialogs saving none, held clinic bill
+resumed whole, swap on resume, margin and expiry); production build passes;
+**554 tests across 45 files**, typecheck clean. Production was not touched.

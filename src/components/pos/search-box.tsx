@@ -222,6 +222,13 @@ export const SearchBox = forwardRef<SearchBoxHandle, Props>(
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
         setActive((a) => Math.max(a - 1, 0));
+      } else if (e.key === "Escape") {
+        // Clears what was typed and closes the list; the box keeps focus.
+        if (query !== "") {
+          e.preventDefault();
+          setQuery("");
+          setActive(0);
+        }
       } else if (e.key === "Enter") {
         e.preventDefault();
         if (query.trim() === "") {

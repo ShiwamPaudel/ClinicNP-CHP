@@ -1,10 +1,11 @@
-import { requireBackOfficeUser } from "@/lib/session";
+import { requireBackOfficeUser, canBill } from "@/lib/session";
 import { getModules } from "@/lib/modules";
 import { appNameFor } from "@/lib/app-name";
 import { listUsers } from "@/lib/repos/users";
 import { getDateCalendar } from "@/lib/repos/company";
 import { Sidebar } from "@/components/app/sidebar";
 import { DateCalendarProvider } from "@/components/ui/date-calendar-context";
+import { GlobalShortcuts } from "@/components/app/global-shortcuts";
 
 export default async function AppLayout({
   children,
@@ -23,6 +24,8 @@ export default async function AppLayout({
 
   return (
     <div className="flex h-screen overflow-hidden bg-cream-100">
+      {/* F2 opens New bill from any page — for whoever can bill. */}
+      {canBill(user.role) && <GlobalShortcuts />}
       <Sidebar
         user={{ name: user.name, role: user.role }}
         switchable={switchable}

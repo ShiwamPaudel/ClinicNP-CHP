@@ -17,7 +17,7 @@ import {
 } from "@/app/(app)/purchases/actions";
 import { toPaisa, formatPaisa, vatOf } from "@/lib/money";
 import { clampPercent, resolveBillDiscount, type DiscountMode } from "@/lib/discount";
-import { bsToDbText, today } from "@/lib/bs";
+import { bsToDbText, today, toAD, toBS } from "@/lib/bs";
 import { PAYABLE_METHOD_LABEL } from "@/lib/payables";
 import type { Draft } from "@/lib/invoice-read/draft";
 import type { Item } from "@/lib/repos/items";
@@ -53,6 +53,21 @@ interface LineState {
    */
   printedName?: string;
   amountDisagrees?: boolean;
+  /**
+   * The expiry is still the one a new row starts with (four years from today)
+   * and has not been changed to the pack's own. Said under the box until it is.
+   */
+  expiryIsDefault?: boolean;
+}
+
+/** How far ahead a new row's expiry starts: the owner's choice, edited to the pack's. */
+const DEFAULT_EXPIRY_YEARS = 4;
+
+/** Today plus four years, as the BS text a date box holds. */
+function defaultExpiryBs(): string {
+  const ad = toAD(today());
+  ad.setFullYear(ad.getFullYear() + DEFAULT_EXPIRY_YEARS);
+  return bsToDbText(toBS(ad));
 }
 
 function blankLine(): LineState {
@@ -60,7 +75,8 @@ function blankLine(): LineState {
     itemId: "",
     unitLevel: 0,
     batchNo: "",
-    expiryDateBs: "",
+    expiryDateBs: defaultExpiryBs(),
+    expiryIsDefault: true,
     qty: "1",
     freeQty: "0",
     costRupees: "0",
@@ -173,7 +189,10 @@ export function PurchaseForm({
         itemId: l.itemId,
         unitLevel: l.unitLevel,
         batchNo: l.batchNo,
+        // What the bill printed, or empty when it printed none — never the
+        // four-years-ahead default, which would pass for a date read off it.
         expiryDateBs: l.expiryDateBs,
+        expiryIsDefault: false,
         qty: l.qty,
         freeQty: l.freeQty,
         costRupees: l.costRupees,
@@ -457,7 +476,7 @@ export function PurchaseForm({
                     below lg, where a single row would be unreadable. */}
                 <div
                   className={
-                    "grid gap-3 sm:grid-cols-2 sm:items-end " +
+                    "grid gap-3 sm:grid-cols-2 sm:items-end lg:pb-4 " +
                     (showBonus
                       ? "lg:grid-cols-[minmax(0,1.7fr)_0.8fr_0.95fr_1.15fr_0.6fr_0.6fr_0.85fr_0.85fr_auto]"
                       : "lg:grid-cols-[minmax(0,1.9fr)_0.85fr_1fr_1.2fr_0.65fr_0.9fr_0.9fr_auto]")
@@ -508,11 +527,18 @@ export function PurchaseForm({
                     {/* Typed or picked: an expiry is read off the pack, and
                         stepping a month grid out to 2027 is slower than
                         typing it. */}
-                    <DatePickerBS
-                      value={l.expiryDateBs}
-                      onChange={(v) => setLine(i, { expiryDateBs: v })}
-                      typable
-                    />
+                    <div className="relative">
+                      <DatePickerBS
+                        value={l.expiryDateBs}
+                        onChange={(v) => setLine(i, { expiryDateBs: v, expiryIsDefault: false })}
+                        typable
+                      />
+                      {l.expiryIsDefault && (
+                        <span className={UNDER_BOX + " font-medium text-warn-600"}>
+                          4 years from today — change to the pack&apos;s
+                        </span>
+                      )}
+                    </div>
                   </Field>
                   <Field label="Qty">
                     <Input
@@ -545,15 +571,18 @@ export function PurchaseForm({
                     />
                   </Field>
                   <Field label="Sell price (रू)">
-                    <Input
-                      numeric
-                      inputMode="decimal"
-                      value={l.sellRupees}
-                      // Blank on an old line means "not recorded"; the hint is
-                      // the item's price today, which a blank leaves alone.
-                      placeholder={rateFor(item, l.unitLevel) || "—"}
-                      onChange={(e) => setLine(i, { sellRupees: e.target.value })}
-                    />
+                    <div className="relative">
+                      <Input
+                        numeric
+                        inputMode="decimal"
+                        value={l.sellRupees}
+                        // Blank on an old line means "not recorded"; the hint is
+                        // the item's price today, which a blank leaves alone.
+                        placeholder={rateFor(item, l.unitLevel) || "—"}
+                        onChange={(e) => setLine(i, { sellRupees: e.target.value })}
+                      />
+                      <MarginNote line={l} sellIfBlank={rateFor(item, l.unitLevel)} />
+                    </div>
                   </Field>
                   <div className="flex h-10 items-center">
                     {l.locked ? (
@@ -909,6 +938,52 @@ export function PurchaseForm({
         </Dialog>
       )}
     </div>
+  );
+}
+
+/**
+ * Where a note under a box sits: in the flow on a narrow screen, where the row
+ * stacks; just under the box on a wide one, so a note on one box does not push
+ * that box out of line with the rest of the row.
+ */
+const UNDER_BOX =
+  "mt-1 block whitespace-nowrap text-[11.5px] leading-4 lg:absolute lg:left-0 lg:top-full lg:mt-0.5";
+
+/**
+ * The margin on a line, worked out as it is typed: what is left of the selling
+ * price after the cost, as a share of the selling price. A blank selling price
+ * leaves the item's price as it is, so that is the price the margin is on.
+ *
+ * Free goods and a line discount make each unit cheaper than the rate typed,
+ * so when they are there the margin they give is shown beside it.
+ */
+function MarginNote({ line, sellIfBlank }: { line: LineState; sellIfBlank: string }) {
+  const cost = Number(line.costRupees) || 0;
+  const sell = Number(line.sellRupees.trim() === "" ? sellIfBlank : line.sellRupees) || 0;
+  if (cost <= 0 || sell <= 0) return null;
+  const pct = (unitCost: number) => ((sell - unitCost) / sell) * 100;
+  const qty = Number(line.qty) || 0;
+  const free = Number(line.freeQty) || 0;
+  const discount = Number(line.discountRupees) || 0;
+  const landed = qty > 0 ? Math.max(0, qty * cost - discount) / (qty + free) : cost;
+  const plain = pct(cost);
+  const withExtras = pct(landed);
+  const extras =
+    free > 0 && discount > 0 ? "free & discount" : free > 0 ? "free" : discount > 0 ? "discount" : "";
+  const show = (n: number) => `${n.toFixed(1)}%`;
+  return (
+    <span
+      className={
+        UNDER_BOX + " " + (plain < 0 ? "font-medium text-danger-600" : "text-sage-600")
+      }
+    >
+      Margin {show(plain)}
+      {extras && Math.abs(withExtras - plain) >= 0.05 && (
+        <span className="text-sage-500">
+          {" "}· {show(withExtras)} with {extras}
+        </span>
+      )}
+    </span>
   );
 }
 

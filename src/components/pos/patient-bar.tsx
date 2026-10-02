@@ -42,6 +42,7 @@ export function PatientBar({
   onAttach,
   onClear,
   openSignal,
+  onOpenChange,
 }: {
   patient: AttachedPatient | null;
   /** true once a service line exists, or the bill is going on dues: the bill
@@ -51,13 +52,17 @@ export function PatientBar({
   requiredFor?: "service" | "dues";
   onAttach: (p: AttachedPatient) => void;
   onClear: () => void;
-  /** incremented by the counter when `P` is pressed */
+  /** incremented by the counter when F4 or `P` is pressed */
   openSignal: number;
+  /** told when the search opens and closes, so the counter's keys stand down */
+  onOpenChange?: (open: boolean) => void;
 }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Found[]>([]);
+  // The highlighted result, chosen with the arrows and attached with Enter.
+  const [activeIdx, setActiveIdx] = useState(0);
   const [searching, setSearching] = useState(false);
   const [offline, setOffline] = useState(false);
   const [registering, setRegistering] = useState(false);
@@ -82,7 +87,11 @@ export function PatientBar({
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 50);
-  }, [open]);
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
+
+  // A new list starts at its first row.
+  useEffect(() => setActiveIdx(0), [results]);
 
   /** The local slice, searched the same way the server searches. */
   const searchLocally = useCallback(async (q: string): Promise<Found[]> => {
@@ -322,7 +331,7 @@ export function PatientBar({
             >
               <UserPlus className="h-4 w-4" />
               Attach patient
-              <kbd className="ml-1 rounded-[4px] bg-sage-150 px-1 text-[11px]">P</kbd>
+              <kbd className="ml-1 rounded-[4px] bg-sage-150 px-1 text-[11px]">F4</kbd>
             </button>
           </>
         )}
@@ -410,7 +419,19 @@ export function PatientBar({
                 ref={inputRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Name, phone or patient number"
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowDown" && results.length > 0) {
+                    e.preventDefault();
+                    setActiveIdx((i) => Math.min(results.length - 1, i + 1));
+                  } else if (e.key === "ArrowUp" && results.length > 0) {
+                    e.preventDefault();
+                    setActiveIdx((i) => Math.max(0, i - 1));
+                  } else if (e.key === "Enter" && results[activeIdx]) {
+                    e.preventDefault();
+                    attach(results[activeIdx]!);
+                  }
+                }}
+                placeholder="Name, phone or patient number — ↑ ↓ and Enter"
                 className="h-11 w-full bg-transparent text-[15px] outline-none placeholder:text-sage-300"
               />
               {searching && <Loader2 className="h-4 w-4 animate-spin text-sage-500" />}
@@ -418,11 +439,15 @@ export function PatientBar({
 
             {results.length > 0 && (
               <ul className="max-h-[320px] overflow-y-auto rounded-[8px] border border-line">
-                {results.map((f) => (
+                {results.map((f, i) => (
                   <li key={f.id}>
                     <button
                       onClick={() => attach(f)}
-                      className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-cream-200"
+                      onMouseEnter={() => setActiveIdx(i)}
+                      className={
+                        "flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-cream-200 " +
+                        (i === activeIdx ? "bg-sage-75" : "")
+                      }
                     >
                       <span>
                         <span className="text-[15px] font-medium text-sage-900">

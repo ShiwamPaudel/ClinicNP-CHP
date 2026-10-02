@@ -51,9 +51,16 @@ export const PaymentPane = forwardRef<
 
   const tenderRef = useRef<HTMLInputElement>(null);
   const paidNowRef = useRef<HTMLInputElement>(null);
+  const saveRef = useRef<HTMLButtonElement>(null);
   useImperativeHandle(ref, () => ({
+    // QR has no box to type into, so it lands on Save, where Enter saves.
     focusTendered: () =>
-      (paymentMethod === "credit" ? paidNowRef : tenderRef).current?.focus(),
+      (paymentMethod === "credit"
+        ? paidNowRef.current
+        : paymentMethod === "cash"
+          ? tenderRef.current
+          : saveRef.current
+      )?.focus(),
   }));
 
   // What was typed in each money box, kept as typed so "12." is not turned
@@ -340,7 +347,7 @@ export const PaymentPane = forwardRef<
             !patient && (
               <p className="text-[12px] text-cream-50/70">
                 Attach the patient who owes this — press{" "}
-                <kbd className="rounded-[4px] bg-sage-700 px-1 text-[11px]">P</kbd>.
+                <kbd className="rounded-[4px] bg-sage-700 px-1 text-[11px]">F4</kbd>.
               </p>
             )
           )}
@@ -348,6 +355,7 @@ export const PaymentPane = forwardRef<
       )}
 
       <button
+        ref={saveRef}
         onClick={onSave}
         disabled={saving || (lines.length === 0 && serviceLines.length === 0) || needsPatient}
         className="mt-1 h-12 rounded-[8px] bg-magenta-600 text-[16px] font-semibold text-cream-50 hover:bg-magenta-700 disabled:opacity-50"

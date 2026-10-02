@@ -175,7 +175,49 @@ function looksLikePack(token: string): boolean {
 
 /** A continuation row: the same medicine again, as free goods or a second batch. */
 function isDitto(line: string): boolean {
-  return /^[-–—\s]*do[-–—\s]*$/i.test(line.trim().split(/\s{2,}/)[0] ?? "") || /^\s*[-–—]\s*do\s*[-–—]/i.test(line);
+  return (
+    /^[-–—\s]*do[-–—\s]*$/i.test(line.trim().split(/\s{2,}/)[0] ?? "") ||
+    /^\s*[-–—]\s*do\s*[-–—]/i.test(line) ||
+    // "do-" and "do -" with the leading dash lost (Sohan, 2083/05/29). The
+    // dash after it is required, so a medicine called DOLO or DOXY never is.
+    /^\s*do\s*[-–—](\s|$)/i.test(line)
+  );
+}
+
+/**
+ * A name printed in front of a "- do -" row: OCR read two rows of the paper
+ * into one line of text, the next medicine's name first and the continuation
+ * row after it ("ANOMYCETIN- EYE OINT - do - 10 TAB 26441494 2027/09 2 FREE").
+ * The name belongs to the row that follows, which comes back with no name of
+ * its own. Gives the name and the row without it, or null.
+ */
+function splitLeadingName(line: string): { name: string; rest: string } | null {
+  const m = /^(.*?[A-Za-z]{3}.*?)\s+[-–—]\s*do\s*[-–—]\s+(.*)$/i.exec(line);
+  if (!m) return null;
+  const name = m[1]!.replace(/^\d{1,2}[.,:]?\s+/, "").replace(/[-–—:;,\s]+$/, "").trim();
+  if (!name) return null;
+  return { name, rest: `- do - ${m[2]}` };
+}
+
+/**
+ * Whether two batch numbers read off the same bill are the same batch, allowing
+ * for the couple of characters OCR gets wrong ("OM2616" / "OK2616"). Either
+ * one missing counts as alike: there is nothing to tell them apart by.
+ */
+function batchesAlike(a: string, b: string): boolean {
+  const norm = (x: string) => x.toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/O/g, "0").replace(/[IL]/g, "1");
+  const x = norm(a);
+  const y = norm(b);
+  if (!x || !y || x === y) return true;
+  if (x.length !== y.length) return x.includes(y) || y.includes(x);
+  let differ = 0;
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) differ++;
+  return differ <= 2;
+}
+
+/** "FREE", and the ways OCR prints it: "EREE", "FRFE", "LFREE" (1 FREE run together). */
+function isFreeMark(token: string): boolean {
+  return /^[lI|1]?[FE]R[EF3][E3]$/i.test(token);
 }
 
 interface RowParts {
@@ -297,8 +339,11 @@ function readRight(right: string[]): {
   unitCostPaisa: number;
   amountPaisa: number;
 } | null {
-  const free = right.some((t) => /^FREE/i.test(t));
+  const free = right.some(isFreeMark);
   const counts = right.filter(looksLikeCount);
+  // "LFREE": the quantity 1 and the word run together, with nothing else
+  // bare on the row to be the quantity.
+  if (counts.length === 0 && right.some((t) => /^[lI|1][FE]R/i.test(t))) counts.push("1");
   const monies = right.filter((t) => looksLikeMoney(t) && !t.includes("%"));
   const qty = counts.length ? Number(counts[0]) : 0;
   if (qty <= 0) return null;
@@ -325,20 +370,27 @@ function readTotals(lines: string[]): Pick<
   let netTotalPaisa: number | null = null;
   let hasVat = false;
 
-  for (const raw of lines) {
-    const line = raw.trim();
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!.trim();
     // "Taxable Amount" comes back as "TaableAmoumt" as often as not.
     if (/\bVAT\b|TA\w?ABLE\s*AM/i.test(line)) hasVat = true;
     // The figure on a totals line is the last money token on it.
     const tokens = line.split(/\s+/);
-    const money = [...tokens].reverse().find((t) => looksLikeMoney(t) && !t.includes("%"));
+    let money = [...tokens].reverse().find((t) => looksLikeMoney(t) && !t.includes("%"));
+    // OCR can lift the figure onto a line of its own just above its label
+    // ("6,318.89" then "OFFICE COPY TOTAL"). Only a line that is nothing but
+    // one amount is borrowed, so a row of the bill never is.
+    if (!money && /T[O0]TAL/i.test(line) && i > 0) {
+      const above = lines[i - 1]!.trim();
+      if (looksLikeMoney(above) && !above.includes("%")) money = above;
+    }
     if (!money) continue;
     const paisa = moneyToPaisa(money);
     if (paisa === null) continue;
     const negative = /[-~]\s*\d|:\s*-/.test(line) && /R[O0DB]UND/i.test(line);
     // Suppliers close a bill every way there is: NET TOTAL on the dot-matrix
     // bills, Net Amount, Net Payable, Grand Total elsewhere.
-    if (/^[^A-Za-z]*(N[E3]T|HET|MET)\s*(T[O0]TAL|AM[O0]UNT|PAYA8?BLE)/i.test(line)) {
+    if (/^[^A-Za-z]*(N[E3][TI1]|HET|MET)\s*(T[O0]TAL|AM[O0]UNT|PAYA8?BLE)/i.test(line)) {
       netTotalPaisa ??= paisa;
     } else if (/GRAND\s*T[O0]TAL/i.test(line)) {
       netTotalPaisa ??= paisa;
@@ -437,16 +489,61 @@ export function parseInvoiceText(text: string): ReadInvoice {
   const [start, end] = itemBand(lines);
   const out: ReadLine[] = [];
 
+  /** A name read in front of a "- do -" row, waiting for the row it names. */
+  let pendingName = "";
+  /** A "- do -" read on a line by itself, marking the row after it. */
+  let dittoNext = false;
+
   for (let i = start; i < end; i++) {
-    const line = lines[i]!;
+    let line = lines[i]!;
+    let parts = splitRow(line.split(/\s+/).filter(Boolean));
+    let right = parts ? readRight(parts.right) : null;
+    // OCR sometimes breaks one printed row in two around the expiry: the name,
+    // pack and batch on one line and "2028/07 10 112.07 1,120.70 130.00" on
+    // the next, or the expiry kept on the first line and the figures alone on
+    // the second. A line that is not a row on its own is read together with
+    // the next one when the break falls exactly there.
+    const next = lines[i + 1];
+    const nextFirst = next?.split(/\s+/)[0] ?? "";
+    const endsOnExpiry = !!expiryFromToken(line.split(/\s+/).at(-1) ?? "");
+    const breaksAtExpiry =
+      !!expiryFromToken(nextFirst) ||
+      (endsOnExpiry && (looksLikeCount(nextFirst) || looksLikeMoney(nextFirst)));
+    if (!right && next && i + 1 < end && breaksAtExpiry) {
+      const joined = `${line} ${next}`;
+      const jParts = splitRow(joined.split(/\s+/).filter(Boolean));
+      const jRight = jParts ? readRight(jParts.right) : null;
+      if (jParts && jRight) {
+        line = joined;
+        parts = jParts;
+        right = jRight;
+        i++;
+      }
+    }
     const tokens = line.split(/\s+/).filter(Boolean);
-    if (tokens.length < 4) continue;
-    const parts = splitRow(tokens);
-    if (!parts) continue;
-    const right = readRight(parts.right);
-    if (!right) continue;
-    const ditto = isDitto(line);
+    // A "- do -" left on a line of its own: the row it begins is the next one.
+    if (!parts && isDitto(line) && tokens.length <= 3) {
+      dittoNext = true;
+      continue;
+    }
+    if (tokens.length < 4 || !parts || !right) continue;
+
+    const lead = splitLeadingName(line);
+    if (lead) {
+      pendingName = lead.name;
+      line = lead.rest;
+      parts = splitRow(line.split(/\s+/).filter(Boolean));
+      right = parts ? readRight(parts.right) : null;
+      if (!parts || !right) continue;
+    }
+    const ditto = isDitto(line) || dittoNext;
+    dittoNext = false;
     const left = readLeft(parts.left);
+    // A "name" with no letters in it is a stray pack or serial figure ("1"),
+    // not a medicine.
+    if (!/[A-Za-z]{2}/.test(left.name)) left.name = "";
+    if (!left.name && !ditto && pendingName) left.name = pendingName;
+    if (!ditto) pendingName = "";
 
     // Free goods come as a continuation row: "- do -" and the same batch
     // again, priced at nothing. That is bonus stock on the row above, not a
@@ -454,7 +551,11 @@ export function parseInvoiceText(text: string): ReadInvoice {
     // "- do -" itself and leaves the row with no name at all.
     const previous = out[out.length - 1];
     if (right.free && previous && (ditto || !left.name)) {
-      previous.freeQty += right.qty;
+      // A free row repeats its medicine's batch. When the rows between were
+      // lost, the row above is a different medicine, and bonus stock put on
+      // it would be wrong stock — so a free row whose batch is plainly not the
+      // one above is left out rather than attached to the wrong line.
+      if (batchesAlike(left.batchNo, previous.batchNo)) previous.freeQty += right.qty;
       continue;
     }
 

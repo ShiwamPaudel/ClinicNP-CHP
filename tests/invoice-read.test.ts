@@ -62,6 +62,13 @@ ROUNDING : -0.31
 HET TOTAL : 18,008.00
 `;
 
+// Sohan Medicine Distributors, CASR0001739 — the OCR text of the owner's own
+// photo (2083-06-16), header trimmed. Pinned exactly as the reader gave it back:
+// a row broken in two at the expiry, "do-" with no leading dash, "EREE" for
+// FREE, the next medicine's name read in front of a "- do -" row, the TOTAL
+// figure lifted onto the line above its label, and "NEI TOTAL".
+const SOHAN = "SOHAN MEDICINE DISTRIBUTORS\nPAN:621198133 PVT. ITD.\nCHHETRAPATI-18,KATHMANDU,NEPAL InvOice No.:\nCASR0001739\nTransaction Date:\n01-5312033 4 Invoice Issue Date: 2083/05/29\nS.N. HS CODE: ITEM DESCRIPTION: PACK: BATCH: EXP.DATE QTY: CC/RATE: AMOUNT: M.R.P.\n1.\n CALIN LOTION 100ML 1 CN20826\n2028/07 10 112.07 1,120.70 130.00\n- do - 1 CN20826 2028/07 2 FREE 0.00% 0.00 130.00\nCYCLOPAM DROPS 26050431 2028/10 5 74.99 374.95 54.25\nCLAVAM -625 MG TAB TAB 26441494 2027/09 8 271.90 2,175.20 196.88\n ANOMYCETIN- EYE OINT - do - 10 TAB 26441494 2027/09 2 EREE 7.51% 40.84 196.88\nAAM56-6 2027/10 1 345.85 345.85 400.00\nSINAREST TAB SCT2504 2028/10 4 39.30 157.20 28.14 \ndo- SCT2504 2028/10 1 39.30 39.30 28.14\n6. ALDACTONE 25 NG TAB 02A25042 2028/08 2 48.30 96.60 34.90\n7. Z0XAFEN FORTE TAB 10 2910 2028/05 5 112.60 563.00 130.00\n-do- 10 2910 2028/05 1 FREE 0.00% 0.00 130.00\n8. CODOPAR TAB 10 TAB 06641 2027/09 10 56.90 569.00 65.00\n9. QUADRAJEL 15GM ITUBE P0226 2028/04 5 117.45 587.25 85.00\n10. FORTIPLEX-M DROP 1PH FM3606 2027/11 2 83.00 166.00 83.00\ndo - 1PH FM3606 2027/11 1 83.00 83.00 83.00\n一一\n6,318.89\nOFFICE COPY TOTAL\nLESS DISCOUNT : 264.93\nROUNDING : 0.04\nNEI TOTAL 6,054.00\nInwords Rs.t cis Thousand Fifty-fotr only.";
+
 const NAVYA = `
 TAXINVOICE
 oL250ML12MP UREEXTRAVIRGINCNO:BABY 5002 PCS 487:4a 10 0.00
@@ -174,6 +181,60 @@ describe("a printed invoice, as OCR gave it back", () => {
 
     const grand = parseInvoiceText("Grand Total 1,234.50");
     expect(grand.netTotalPaisa).toBe(123450);
+  });
+
+  it("reads Sohan: every row, the free goods, and every closing figure", () => {
+    const r = parseInvoiceText(SOHAN);
+    expect(r.invoiceNo).toBe("CASR0001739");
+    expect(r.dateBs).toBe("2083-05-29");
+    const rows = r.lines.map((l) => [l.batchNo, l.expiryAdMonth, l.qty, l.freeQty, l.unitCostPaisa]);
+    expect(rows).toEqual([
+      ["CN20826", "2028-07", 10, 2, 11207], // broken in two at the expiry
+      ["26050431", "2028-10", 5, 0, 7499],
+      ["26441494", "2027-09", 8, 2, 27190], // "2 EREE"
+      ["AAM56-6", "2027-10", 1, 0, 34585], // its name was read on the line above
+      ["SCT2504", "2028-10", 4, 0, 3930],
+      ["SCT2504", "2028-10", 1, 0, 3930], // "do-": a second line of the same
+      ["02A25042", "2028-08", 2, 0, 4830],
+      ["2910", "2028-05", 5, 1, 11260],
+      ["06641", "2027-09", 10, 0, 5690],
+      ["P0226", "2028-04", 5, 0, 11745],
+      ["FM3606", "2027-11", 2, 0, 8300],
+      ["FM3606", "2027-11", 1, 0, 8300],
+    ]);
+    expect(r.lines[0]!.printedName).toMatch(/^CALIN LOTION/);
+    expect(r.lines[3]!.printedName).toBe("ANOMYCETIN- EYE OINT");
+    expect(r.lines[5]!.printedName).toBe("SINAREST TAB");
+    expect(r.lines.every((l) => !l.amountDisagrees)).toBe(true);
+    expect(r.totalPaisa).toBe(631889);
+    expect(r.billDiscountPaisa).toBe(26493);
+    expect(r.roundingPaisa).toBe(4);
+    expect(r.netTotalPaisa).toBe(605400);
+  });
+
+  it("does not put free goods on a different medicine when the rows between were lost", () => {
+    const r = parseInvoiceText(
+      [
+        "ITEM DESCRIPTION:",
+        "SINAREST TAB SCT2504 2028/10 4 39.30 157.20 28.14",
+        "-do- 10 2910 2028/05 1 FREE 0.00% 0.00 130.00",
+        "Inwords",
+      ].join("\n"),
+    );
+    expect(r.lines).toHaveLength(1);
+    expect(r.lines[0]!.freeQty).toBe(0);
+  });
+
+  it("never takes a medicine whose name starts with DO for a continuation row", () => {
+    const r = parseInvoiceText(
+      [
+        "ITEM DESCRIPTION:",
+        "CETAMOL TAB C1 2028/01 10 1.00 10.00 2.00",
+        "DOLO 650 TAB D9 2028/02 5 2.00 10.00 3.00",
+        "Inwords",
+      ].join("\n"),
+    );
+    expect(r.lines.map((l) => l.printedName)).toEqual(["CETAMOL TAB", "DOLO 650 TAB"]);
   });
 
   it("keeps nothing it cannot identify off a bill it could not read", () => {

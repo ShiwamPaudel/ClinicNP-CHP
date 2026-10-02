@@ -39,9 +39,12 @@ export interface PosConfig {
 export function BillTable({
   config,
   onOpenBatch,
+  onBackToSearch,
 }: {
   config: PosConfig;
   onOpenBatch: (lineId: string) => void;
+  /** Enter on a line, or removing it, goes back to the search box. */
+  onBackToSearch?: () => void;
 }) {
   const lines = useBillStore((s) => s.lines);
   const serviceLines = useBillStore((s) => s.serviceLines);
@@ -80,6 +83,7 @@ export function BillTable({
               line={line}
               config={config}
               onOpenBatch={onOpenBatch}
+              onBackToSearch={onBackToSearch}
             />
           ))}
         </tbody>
@@ -92,10 +96,12 @@ function BillLineRow({
   line,
   config,
   onOpenBatch,
+  onBackToSearch,
 }: {
   line: BillLine;
   config: PosConfig;
   onOpenBatch: (lineId: string) => void;
+  onBackToSearch?: () => void;
 }) {
   const {
     setQty,
@@ -148,6 +154,29 @@ function BillLineRow({
   const unpriced = (unit?.sellingRatePaisa ?? 0) === 0;
   const needsPrice = unpriced && line.ratePaisa <= 0;
 
+  /**
+   * The keys on a line, the same in its quantity, rate and discount boxes —
+   * they are all numbers, so no letter here is ever wanted as typing.
+   * U unit · B batch · Del remove · Enter back to the search for the next one.
+   */
+  function lineKeys(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === "u" || e.key === "U") {
+      e.preventDefault();
+      cycleUnit(line.lineId);
+    } else if (e.key === "b" || e.key === "B") {
+      e.preventDefault();
+      onOpenBatch(line.lineId);
+    } else if (e.key === "Delete") {
+      e.preventDefault();
+      removeLine(line.lineId);
+      onBackToSearch?.();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      onBackToSearch?.();
+    }
+  }
+
   return (
     <tr
       className={cn(
@@ -195,18 +224,7 @@ function BillLineRow({
           onChange={(e) =>
             setQty(line.lineId, Number(e.target.value.replace(/\D/g, "")) || 1)
           }
-          onKeyDown={(e) => {
-            if (e.key === "u" || e.key === "U") {
-              e.preventDefault();
-              cycleUnit(line.lineId);
-            } else if (e.key === "b" || e.key === "B") {
-              e.preventDefault();
-              onOpenBatch(line.lineId);
-            } else if (e.key === "Delete") {
-              e.preventDefault();
-              removeLine(line.lineId);
-            }
-          }}
+          onKeyDown={lineKeys}
           className="h-9 w-16 rounded-[8px] border border-line bg-cream-50 px-2 text-right text-[15px] tnum focus:outline-none focus-visible:ring-2 focus-visible:ring-sage-700"
           aria-label="Quantity"
         />
@@ -222,6 +240,7 @@ function BillLineRow({
               setRateStr(e.target.value);
               setRate(line.lineId, toPaisa(Number(e.target.value) || 0));
             }}
+            onKeyDown={lineKeys}
             className={cn(
               "h-9 w-24 rounded-[8px] border bg-cream-50 px-2 pr-4 text-right text-[15px] tnum focus:outline-none focus-visible:ring-2 focus-visible:ring-sage-700 disabled:opacity-60",
               needsPrice
@@ -248,6 +267,7 @@ function BillLineRow({
             setDiscStr(e.target.value);
             setLineDiscount(line.lineId, toPaisa(Number(e.target.value) || 0));
           }}
+          onKeyDown={lineKeys}
           className="h-9 w-20 rounded-[8px] border border-line bg-cream-50 px-2 text-right text-[15px] tnum focus:outline-none focus-visible:ring-2 focus-visible:ring-sage-700"
           aria-label="Line discount"
         />

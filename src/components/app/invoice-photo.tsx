@@ -11,7 +11,7 @@
  * The reader is ~6 MB of model and runtime, so it is only fetched when
  * somebody actually picks a photo, never on the way into the page.
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Camera, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -25,6 +25,20 @@ const STAGE_TEXT: Record<ReadStage, string> = {
   reading: "Reading the bill…",
 };
 
+/**
+ * What to tell the person when a stage fails. They used to all say "check the
+ * connection", which is only true of one of them and left nobody able to say
+ * why a photo gave nothing back.
+ */
+const STAGE_FAILED: Record<ReadStage, string> = {
+  opening:
+    "That photo could not be opened. Use a JPG or PNG picture — some phones save HEIC/HEIF photos, which the browser cannot open.",
+  loading:
+    "The reader could not be downloaded (about 40 MB, only the first time on each device). Check the internet connection and try again.",
+  reading:
+    "The reader stopped part-way through the photo. This usually means the device ran out of memory — try again on a computer, or with a smaller photo.",
+};
+
 export function InvoicePhotoButton({
   items,
   onDraft,
@@ -35,11 +49,28 @@ export function InvoicePhotoButton({
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [stage, setStage] = useState<ReadStage | null>(null);
+  // Seconds since the photo was picked. A phone can take a minute over a bill,
+  // and a counter that is visibly still counting is not mistaken for stuck.
+  const [seconds, setSeconds] = useState(0);
+  const running = stage !== null;
+  useEffect(() => {
+    if (!running) return;
+    const started = Date.now();
+    setSeconds(0);
+    const t = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [running]);
 
   async function onPick(file: File) {
     setStage("opening");
+    // Which stage was running when something failed, so the message can say.
+    let current: ReadStage = "opening";
+    const track = (s: ReadStage) => {
+      current = s;
+      setStage(s);
+    };
     try {
-      const text = await readPhotoText(file, setStage);
+      const text = await readPhotoText(file, track);
       const read = parseInvoiceText(text);
       if (read.lines.length === 0) {
         toast.error(
@@ -53,8 +84,8 @@ export function InvoicePhotoButton({
       );
     } catch (e) {
       // The person gets a sentence; whoever has to work out why gets the rest.
-      console.error("Invoice reader:", e);
-      toast.error("The photo could not be read. Check the connection and try again.");
+      console.error(`Invoice reader failed while ${current}:`, e);
+      toast.error(STAGE_FAILED[current]);
     } finally {
       setStage(null);
     }
@@ -80,11 +111,11 @@ export function InvoicePhotoButton({
         onClick={() => fileRef.current?.click()}
       >
         {stage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-        {stage ? STAGE_TEXT[stage] : "Fill from a photo"}
+        {stage ? `${STAGE_TEXT[stage]} ${seconds} s` : "Fill from a photo"}
       </Button>
       <p className="text-[12px] text-sage-500">
         {stage
-          ? "This takes a few seconds. The first photo of the day takes longer."
+          ? "Keep this page open. About 15–30 seconds on a computer; a phone can take a minute or more."
           : "Take or pick a photo of the supplier's bill. It only fills the boxes below — check them against the paper before saving. The photo is not kept."}
       </p>
     </div>

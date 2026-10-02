@@ -157,6 +157,18 @@ export interface HeldBill {
   /** carried for a patient who may not have reached the server yet */
   patient?: InlinePatient;
   visitId?: string;
+  /**
+   * The patient exactly as the patient bar showed them, so resuming puts the
+   * same person back on the bill. Absent on bills held before it was kept;
+   * those are matched by `patientId` against the counter's patient list.
+   */
+  attachedPatient?: {
+    id: string;
+    patientNo: number | null;
+    name: string;
+    sex: string;
+    ageShort: string;
+  };
 }
 
 export interface HeldServiceLine {

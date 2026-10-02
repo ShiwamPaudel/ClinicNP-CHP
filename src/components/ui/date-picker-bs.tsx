@@ -163,9 +163,14 @@ export function DatePickerBS({
             // into it.
             value={typing ? text : label}
             placeholder={typing ? "YYYY-MM-DD" : placeholder}
-            onFocus={() => {
+            onFocus={(e) => {
               setTyping(true);
               setText(numericInCalendar(selected, shopCalendar));
+              // The whole date is selected, so a box that already holds one —
+              // a new purchase row's four-years-ahead expiry — is typed over
+              // rather than backspaced out ten characters at a time.
+              const box = e.currentTarget;
+              requestAnimationFrame(() => box.select());
             }}
             onChange={(e) => commitTyped(e.target.value)}
             onBlur={() => setTyping(false)}
